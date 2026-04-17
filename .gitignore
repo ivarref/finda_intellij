@@ -46,3 +46,4 @@ lib/
 .run/
 ideaopen.log
 *.log
+.idea/

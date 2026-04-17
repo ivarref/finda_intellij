@@ -18,9 +18,11 @@ Select `./build/distributions/pluggy-1.0-SNAPSHOT.zip`. Restart the IDE.
 
 ## Goals
 
-* Next: Across files.
+* Next change/error: Across files. Wrap around.
 
 * Window: split if needed, move otherwise.
+
+* Open file tracked by git.
 
 ## Non goals
 

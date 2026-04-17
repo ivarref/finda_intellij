@@ -25,10 +25,9 @@
 
     </extensions>
     <actions>
-        <group
-                id="com.github.ivarref.ChooseInitialNextAction"
-                text="Devil Mode - Choose Initial Next Action"
-                popup="true">
+        <group id="com.github.ivarref.ChooseInitialNextAction"
+               text="Devil Mode - Choose Initial Next Action"
+               popup="true">
             <add-to-group
                     group-id="ToolsMenu"
                     anchor="after"
@@ -46,10 +45,9 @@
                     description="Go to next change">
             </action>
         </group>
-        <group
-                id="com.github.ivarref.ChooseWindowAction"
-                text="Devil Mode - Choose Window Action"
-                popup="true">
+        <group id="com.github.ivarref.ChooseWindowAction"
+               text="Devil Mode - Choose Window Action"
+               popup="true">
             <add-to-group
                     group-id="ToolsMenu"
                     anchor="after"
@@ -67,7 +65,6 @@
                     description="Split / move to next group">
             </action>
         </group>
-
         <action id="com.github.ivarref.ideafinda.PopupDialogAction"
                 class="com.github.ivarref.ideafinda.PopupDialogAction"
                 text="Ivar Dialog Action"
