@@ -159,8 +159,11 @@ public class CallHierarchyPopupAction extends AnAction {
                         return;
                     }
 
-                    // Deepest (furthest from target) first
-                    allCallSites.sort(Comparator.comparingInt(CallSite::depth).reversed());
+                    // Nearest first; indent each extra level with one space
+                    allCallSites.sort(Comparator.comparingInt(CallSite::depth));
+                    allCallSites.replaceAll(s -> new CallSite(
+                            " ".repeat(s.depth() - 0) + s.display(),
+                            s.file(), s.offset(), s.depth()));
 
                     ApplicationManager.getApplication().invokeLater(() -> {
                         System.out.println("[CallHierarchy] showing popup with " + allCallSites.size() + " items");
@@ -201,13 +204,21 @@ public class CallHierarchyPopupAction extends AnAction {
     private static String callerLabel(@Nullable PsiNamedElement caller, PsiElement fallback) {
         if (caller instanceof PsiMethod method) {
             PsiClass cls = method.getContainingClass();
-            String prefix = cls != null ? cls.getName() + "." : "";
+            String prefix = namedClassName(cls) + ".";
             return prefix + method.getName();
-        } else if (caller != null) {
+        } else if (caller != null && caller.getName() != null) {
             return caller.getName();
         } else {
             return fallback.getContainingFile().getName();
         }
+    }
+
+    /** Returns the nearest named class, walking up through anonymous/local classes if needed. */
+    private static String namedClassName(@Nullable PsiClass cls) {
+        while (cls != null && cls.getName() == null) {
+            cls = PsiTreeUtil.getParentOfType(cls, PsiClass.class);
+        }
+        return cls != null ? cls.getName() : "";
     }
 
     @SuppressWarnings("unchecked")
