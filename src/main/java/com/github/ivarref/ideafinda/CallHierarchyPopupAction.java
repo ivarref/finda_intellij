@@ -39,11 +39,14 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 public class CallHierarchyPopupAction extends AnAction {
+
+    private static final int PAGE_SIZE = 35;
 
     // display = label text only (no indentation); indentation and '>' are computed in the renderer
     record CallSite(String display, VirtualFile file, int offset, int depth,
@@ -129,6 +132,8 @@ public class CallHierarchyPopupAction extends AnAction {
                     EditorColorsScheme scheme = EditorColorsManager.getInstance().getGlobalScheme();
                     Font editorFont = new Font(scheme.getEditorFontName(), Font.PLAIN, scheme.getEditorFontSize());
 
+                    initialItems.sort(Comparator.comparing(CallSite::display));
+
                     ApplicationManager.getApplication().invokeLater(() ->
                             showPopup(project, "Callers of " + startName, initialItems, expanded, editorFont));
 
@@ -164,6 +169,7 @@ public class CallHierarchyPopupAction extends AnAction {
             return label;
         });
         jbList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        jbList.setVisibleRowCount(PAGE_SIZE);
         if (model.size() > 0) jbList.setSelectedIndex(0);
 
         JBPopup[] popupRef = new JBPopup[1];
@@ -172,11 +178,11 @@ public class CallHierarchyPopupAction extends AnAction {
             @Override
             public void keyPressed(KeyEvent e) {
                 switch (e.getKeyCode()) {
-                    case KeyEvent.VK_L, KeyEvent.VK_RIGHT -> {
+                    case KeyEvent.VK_L, KeyEvent.VK_RIGHT, KeyEvent.VK_LEFT -> {
                         expandSelected(project, jbList, model, expanded);
                         e.consume();
                     }
-                    case KeyEvent.VK_H, KeyEvent.VK_LEFT -> {
+                    case KeyEvent.VK_H -> {
                         collapseSelected(jbList, model, expanded);
                         e.consume();
                     }
@@ -187,6 +193,18 @@ public class CallHierarchyPopupAction extends AnAction {
                     case KeyEvent.VK_K -> {
                         moveSelection(jbList, -1);
                         e.consume();
+                    }
+                    case KeyEvent.VK_D -> {
+                        if (e.isControlDown()) {
+                            moveSelection(jbList, PAGE_SIZE);
+                            e.consume();
+                        }
+                    }
+                    case KeyEvent.VK_U -> {
+                        if (e.isControlDown()) {
+                            moveSelection(jbList, -PAGE_SIZE);
+                            e.consume();
+                        }
                     }
                     case KeyEvent.VK_ENTER -> {
                         navigateToSelected(project, jbList, popupRef[0]);
@@ -273,9 +291,23 @@ public class CallHierarchyPopupAction extends AnAction {
                     }
 
                     if (!newSites.isEmpty()) {
+                        newSites.sort(Comparator.comparing(CallSite::display));
                         ApplicationManager.getApplication().invokeLater(() -> {
                             for (int i = 0; i < newSites.size(); i++) {
                                 model.insertElementAt(newSites.get(i), insertAfterIdx + 1 + i);
+                            }
+                            int firstChild = insertAfterIdx + 1;
+                            jbList.setSelectedIndex(firstChild);
+                            jbList.ensureIndexIsVisible(firstChild);
+                        });
+                    } else {
+                        // No callers found: clear '>' so it won't be retried
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            expanded.remove(callerKey);
+                            if (insertAfterIdx < model.size()) {
+                                CallSite item = model.getElementAt(insertAfterIdx);
+                                model.setElementAt(new CallSite(item.display(), item.file(), item.offset(),
+                                        item.depth(), null, false), insertAfterIdx);
                             }
                         });
                     }
