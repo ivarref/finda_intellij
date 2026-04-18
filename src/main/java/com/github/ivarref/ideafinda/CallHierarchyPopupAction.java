@@ -45,6 +45,7 @@ import java.util.Set;
 
 public class CallHierarchyPopupAction extends AnAction {
 
+    // display = label text only (no indentation); indentation and '>' are computed in the renderer
     record CallSite(String display, VirtualFile file, int offset, int depth,
                     @Nullable PsiNamedElement callerElement, boolean expanded) {}
 
@@ -103,7 +104,6 @@ public class CallHierarchyPopupAction extends AnAction {
                     String startName = ReadAction.compute(startElement::getName);
                     System.out.println("[CallHierarchy] starting from: " + startName);
 
-                    // Tracks which elements have already had their callers searched
                     Set<String> expanded = new HashSet<>();
                     expanded.add(elementKey(startElement));
 
@@ -114,10 +114,7 @@ public class CallHierarchyPopupAction extends AnAction {
 
                         CallSite site = ReadAction.compute(() -> {
                             PsiElement el = ref.getElement();
-                            String label = callerLabel(callerEl, el);
-                            var doc = PsiDocumentManager.getInstance(project).getDocument(el.getContainingFile());
-                            int line = doc != null ? doc.getLineNumber(el.getTextOffset()) + 1 : -1;
-                            String display = line > 0 ? label + ":" + line : label;
+                            String display = buildDisplay(project, callerEl, el);
                             return new CallSite(display, el.getContainingFile().getVirtualFile(),
                                     el.getTextOffset(), 1, callerEl, false);
                         });
@@ -151,7 +148,9 @@ public class CallHierarchyPopupAction extends AnAction {
         JBList<CallSite> jbList = new JBList<>(model);
         jbList.setFont(editorFont);
         jbList.setCellRenderer((lst, value, index, isSelected, hasFocus) -> {
-            JLabel label = new JLabel(value.display());
+            String indent = " ".repeat(value.depth() - 1);
+            String indicator = (value.callerElement() != null && !value.expanded()) ? ">" : " ";
+            JLabel label = new JLabel(indent + indicator + " " + value.display());
             label.setFont(editorFont);
             label.setOpaque(true);
             label.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
@@ -172,10 +171,27 @@ public class CallHierarchyPopupAction extends AnAction {
         jbList.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
-                if (e.getKeyChar() == 'l') {
-                    expandSelected(project, jbList, model, expanded, editorFont);
-                } else if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-                    navigateToSelected(project, jbList, popupRef[0]);
+                switch (e.getKeyCode()) {
+                    case KeyEvent.VK_L, KeyEvent.VK_RIGHT -> {
+                        expandSelected(project, jbList, model, expanded);
+                        e.consume();
+                    }
+                    case KeyEvent.VK_H, KeyEvent.VK_LEFT -> {
+                        collapseSelected(jbList, model, expanded);
+                        e.consume();
+                    }
+                    case KeyEvent.VK_J -> {
+                        moveSelection(jbList, 1);
+                        e.consume();
+                    }
+                    case KeyEvent.VK_K -> {
+                        moveSelection(jbList, -1);
+                        e.consume();
+                    }
+                    case KeyEvent.VK_ENTER -> {
+                        navigateToSelected(project, jbList, popupRef[0]);
+                        e.consume();
+                    }
                 }
             }
         });
@@ -213,7 +229,7 @@ public class CallHierarchyPopupAction extends AnAction {
     }
 
     private static void expandSelected(Project project, JBList<CallSite> jbList,
-                                       DefaultListModel<CallSite> model, Set<String> expanded, Font editorFont) {
+                                       DefaultListModel<CallSite> model, Set<String> expanded) {
         int idx = jbList.getSelectedIndex();
         if (idx < 0) return;
         CallSite selected = model.getElementAt(idx);
@@ -230,7 +246,6 @@ public class CallHierarchyPopupAction extends AnAction {
         if (expanded.contains(callerKey)) return;
         expanded.add(callerKey);
 
-        // Mark the item as expanded immediately so repeated 'l' presses don't trigger duplicate searches
         model.setElementAt(new CallSite(selected.display(), selected.file(), selected.offset(),
                 selected.depth(), callerEl, true), idx);
 
@@ -248,10 +263,7 @@ public class CallHierarchyPopupAction extends AnAction {
 
                         CallSite site = ReadAction.compute(() -> {
                             PsiElement el = ref.getElement();
-                            String label = callerLabel(newCallerEl, el);
-                            var doc = PsiDocumentManager.getInstance(project).getDocument(el.getContainingFile());
-                            int line = doc != null ? doc.getLineNumber(el.getTextOffset()) + 1 : -1;
-                            String display = " ".repeat(insertDepth - 1) + (line > 0 ? label + ":" + line : label);
+                            String display = buildDisplay(project, newCallerEl, el);
                             return new CallSite(display, el.getContainingFile().getVirtualFile(),
                                     el.getTextOffset(), insertDepth, newCallerEl, false);
                         });
@@ -275,12 +287,62 @@ public class CallHierarchyPopupAction extends AnAction {
         }.queue();
     }
 
+    private static void collapseSelected(JBList<CallSite> jbList,
+                                         DefaultListModel<CallSite> model, Set<String> expanded) {
+        int idx = jbList.getSelectedIndex();
+        if (idx < 0) return;
+        CallSite selected = model.getElementAt(idx);
+        if (!selected.expanded()) return;
+
+        // Collect all descendants (consecutive items with depth > selected.depth)
+        List<CallSite> toRemove = new ArrayList<>();
+        int i = idx + 1;
+        while (i < model.size() && model.getElementAt(i).depth() > selected.depth()) {
+            toRemove.add(model.getElementAt(i));
+            i++;
+        }
+        for (int j = toRemove.size() - 1; j >= 0; j--) {
+            model.removeElementAt(idx + 1 + j);
+        }
+
+        // Remove from expanded so the item (and its sub-tree) can be re-expanded later
+        removeFromExpanded(expanded, selected);
+        for (CallSite site : toRemove) {
+            if (site.expanded()) removeFromExpanded(expanded, site);
+        }
+
+        model.setElementAt(new CallSite(selected.display(), selected.file(), selected.offset(),
+                selected.depth(), selected.callerElement(), false), idx);
+    }
+
+    private static void removeFromExpanded(Set<String> expanded, CallSite site) {
+        if (site.callerElement() != null) {
+            try {
+                expanded.remove(elementKey(site.callerElement()));
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static void moveSelection(JBList<?> jbList, int delta) {
+        int next = Math.max(0, Math.min(jbList.getModel().getSize() - 1,
+                jbList.getSelectedIndex() + delta));
+        jbList.setSelectedIndex(next);
+        jbList.ensureIndexIsVisible(next);
+    }
+
     private static void navigateToSelected(Project project, JBList<CallSite> jbList, JBPopup popup) {
         int idx = jbList.getSelectedIndex();
         if (idx < 0) return;
         CallSite selected = jbList.getModel().getElementAt(idx);
         if (popup != null) popup.cancel();
         new OpenFileDescriptor(project, selected.file(), selected.offset()).navigate(true);
+    }
+
+    private static String buildDisplay(Project project, @Nullable PsiNamedElement callerEl, PsiElement refEl) {
+        String label = callerLabel(callerEl, refEl);
+        var doc = PsiDocumentManager.getInstance(project).getDocument(refEl.getContainingFile());
+        int line = doc != null ? doc.getLineNumber(refEl.getTextOffset()) + 1 : -1;
+        return line > 0 ? label + ":" + line : label;
     }
 
     private static String elementKey(PsiNamedElement element) {
