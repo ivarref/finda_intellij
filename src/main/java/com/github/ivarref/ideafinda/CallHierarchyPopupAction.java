@@ -196,7 +196,7 @@ public class CallHierarchyPopupAction extends AnAction {
                         expandSelected(project, jbList, model, expanded);
                         e.consume();
                     }
-                    case KeyEvent.VK_RIGHT -> {
+                    case KeyEvent.VK_RIGHT, KeyEvent.VK_KP_RIGHT -> {
                         expandSelected(project, jbList, model, expanded);
                         e.consume();
                     }
@@ -204,11 +204,7 @@ public class CallHierarchyPopupAction extends AnAction {
                         collapseSelected(jbList, model, expanded);
                         e.consume();
                     }
-                    case KeyEvent.VK_KP_LEFT -> {
-                        collapseSelected(jbList, model, expanded);
-                        e.consume();
-                    }
-                    case KeyEvent.VK_LEFT -> {
+                    case KeyEvent.VK_LEFT, KeyEvent.VK_KP_LEFT -> {
                         collapseSelected(jbList, model, expanded);
                         e.consume();
                     }
@@ -277,6 +273,39 @@ public class CallHierarchyPopupAction extends AnAction {
                 .createPopup();
 
         popupRef[0] = popup;
+
+        // Use a KeyEventDispatcher to intercept left/right arrows before the JScrollPane
+        // or JBList consume them for scrolling/navigation.
+        java.awt.KeyEventDispatcher arrowDispatcher = e -> {
+            if (e.getID() != KeyEvent.KEY_PRESSED) return false;
+            Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            // Only act when focus is inside our popup's scroll pane
+            if (focused == null) return false;
+            Component c = focused;
+            while (c != null) {
+                if (c == scrollPane) break;
+                c = c.getParent();
+            }
+            if (c == null) return false;
+            int code = e.getKeyCode();
+            if (code == KeyEvent.VK_RIGHT || code == KeyEvent.VK_KP_RIGHT) {
+                expandSelected(project, jbList, model, expanded);
+                return true;
+            } else if (code == KeyEvent.VK_LEFT || code == KeyEvent.VK_KP_LEFT) {
+                collapseSelected(jbList, model, expanded);
+                return true;
+            }
+            return false;
+        };
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(arrowDispatcher);
+
+        popup.addListener(new JBPopupListener() {
+            @Override
+            public void onClosed(@NotNull LightweightWindowEvent event) {
+                KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(arrowDispatcher);
+            }
+        });
+
         popup.showCenteredInCurrentWindow(project);
     }
 
