@@ -191,7 +191,11 @@ public class CallHierarchyPopupAction extends AnAction {
             @Override
             public void keyPressed(KeyEvent e) {
                 switch (e.getKeyCode()) {
-                    case KeyEvent.VK_L, KeyEvent.VK_RIGHT, KeyEvent.VK_LEFT -> {
+                    case KeyEvent.VK_L -> {
+                        expandSelected(project, jbList, model, expanded);
+                        e.consume();
+                    }
+                    case KeyEvent.VK_RIGHT -> {
                         expandSelected(project, jbList, model, expanded);
                         e.consume();
                     }
@@ -199,11 +203,27 @@ public class CallHierarchyPopupAction extends AnAction {
                         collapseSelected(jbList, model, expanded);
                         e.consume();
                     }
+                    case KeyEvent.VK_KP_LEFT -> {
+                        collapseSelected(jbList, model, expanded);
+                        e.consume();
+                    }
+                    case KeyEvent.VK_LEFT -> {
+                        collapseSelected(jbList, model, expanded);
+                        e.consume();
+                    }
                     case KeyEvent.VK_J -> {
                         moveSelection(jbList, 1);
                         e.consume();
                     }
+                    case KeyEvent.VK_DOWN -> {
+                        moveSelection(jbList, 1);
+                        e.consume();
+                    }
                     case KeyEvent.VK_K -> {
+                        moveSelection(jbList, -1);
+                        e.consume();
+                    }
+                    case KeyEvent.VK_UP -> {
                         moveSelection(jbList, -1);
                         e.consume();
                     }
