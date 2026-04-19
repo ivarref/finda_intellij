@@ -190,6 +190,7 @@ public class CallHierarchyPopupAction extends AnAction {
         jbList.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
+                DebugLogger.info("received keypress :-)");
                 switch (e.getKeyCode()) {
                     case KeyEvent.VK_L -> {
                         expandSelected(project, jbList, model, expanded);
