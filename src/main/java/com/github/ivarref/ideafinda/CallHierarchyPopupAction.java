@@ -46,7 +46,7 @@ import java.util.Set;
 
 public class CallHierarchyPopupAction extends AnAction {
 
-    private static final int PAGE_SIZE = 35;
+    private static final int PAGE_SIZE = 28;
 
     // display = label text only (no indentation); indentation and '>' are computed in the renderer
     record CallSite(String display, VirtualFile file, int offset, int depth,
@@ -153,8 +153,8 @@ public class CallHierarchyPopupAction extends AnAction {
         JBList<CallSite> jbList = new JBList<>(model);
         jbList.setFont(editorFont);
         jbList.setCellRenderer((lst, value, index, isSelected, hasFocus) -> {
-            String indent = " ".repeat(value.depth() - 1);
-            String indicator = (value.callerElement() != null && !value.expanded()) ? ">" : " ";
+            String indent = " ".repeat(2 * (value.depth() - 1));
+            String indicator = value.expanded() ? "*" : value.callerElement() != null ? ">" : ".";
             JLabel label = new JLabel(indent + indicator + " " + value.display());
             label.setFont(editorFont);
             label.setOpaque(true);
@@ -169,10 +169,23 @@ public class CallHierarchyPopupAction extends AnAction {
             return label;
         });
         jbList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        jbList.setVisibleRowCount(PAGE_SIZE);
+        jbList.setVisibleRowCount(Math.min(PAGE_SIZE, Math.max(1, model.size())));
         if (model.size() > 0) jbList.setSelectedIndex(0);
 
         JBPopup[] popupRef = new JBPopup[1];
+
+        model.addListDataListener(new javax.swing.event.ListDataListener() {
+            @Override public void intervalAdded(javax.swing.event.ListDataEvent e) { sync(); }
+            @Override public void intervalRemoved(javax.swing.event.ListDataEvent e) { sync(); }
+            @Override public void contentsChanged(javax.swing.event.ListDataEvent e) {}
+            private void sync() {
+                jbList.setVisibleRowCount(Math.min(PAGE_SIZE, Math.max(1, model.size())));
+                jbList.revalidate();
+                if (popupRef[0] != null && !popupRef[0].isDisposed()) {
+                    popupRef[0].pack(false, true);
+                }
+            }
+        });
 
         jbList.addKeyListener(new KeyAdapter() {
             @Override
