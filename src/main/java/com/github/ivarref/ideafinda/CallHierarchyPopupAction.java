@@ -610,12 +610,25 @@ public class CallHierarchyPopupAction extends AnAction {
         String relativePath = (basePath != null && filePath.startsWith(basePath))
                 ? filePath.substring(basePath.length()).replaceFirst("^/", "")
                 : filePath;
-        // Normalize indentation: 2 spaces for the def line, 4 spaces for parameter lines
+        // Normalize indentation: strip common leading whitespace, then
+        // prepend 2 spaces to the def line and 4 spaces to parameter lines.
+        // Stripping only the common prefix preserves relative alignment between lines.
         String[] defLines = funcDef.split("\n", -1);
+        int minIndent = Integer.MAX_VALUE;
+        for (String line : defLines) {
+            if (!line.isBlank()) {
+                int spaces = 0;
+                while (spaces < line.length() && line.charAt(spaces) == ' ') spaces++;
+                minIndent = Math.min(minIndent, spaces);
+            }
+        }
+        if (minIndent == Integer.MAX_VALUE) minIndent = 0;
+        final int strip = minIndent;
         StringBuilder normalizedDef = new StringBuilder();
         for (int i = 0; i < defLines.length; i++) {
             if (i > 0) normalizedDef.append("\n");
-            normalizedDef.append(i == 0 ? "  " : "    ").append(defLines[i].stripLeading());
+            String line = defLines[i].length() >= strip ? defLines[i].substring(strip) : defLines[i];
+            normalizedDef.append(i == 0 ? "  " : "   ").append(line);
         }
         funcDef = normalizedDef.toString();
 
