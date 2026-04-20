@@ -109,33 +109,32 @@ public class CallHierarchyPopupAction extends AnAction {
                     Set<String> expanded = new HashSet<>();
                     expanded.add(elementKey(startElement));
 
-                    List<CallSite> initialItems = new ArrayList<>();
-                    for (PsiReference ref : ReferencesSearch.search(startElement, GlobalSearchScope.projectScope(project)).findAll()) {
-                        if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
-                        PsiNamedElement callerEl = ReadAction.compute(() ->
-                                PsiTreeUtil.getParentOfType(ref.getElement(), PsiMethod.class));
-
-                        CallSite site = ReadAction.compute(() -> {
-                            PsiElement el = ref.getElement();
-                            String display = buildDisplay(project, callerEl, el);
-                            return new CallSite(display, el.getContainingFile().getVirtualFile(),
-                                    el.getTextOffset(), 1, callerEl, false);
-                        });
-
-                        System.out.println("[CallHierarchy] initial caller: " + site.display());
-                        initialItems.add(site);
-                    }
+                    List<CallSite> initialItems = findCallerSites(startElement, project, 1);
 
                     System.out.println("[CallHierarchy] found " + initialItems.size() + " initial callers");
                     if (initialItems.isEmpty()) return;
 
+                    if (initialItems.size() < 5) {
+                        List<CallSite> withChildren = new ArrayList<>();
+                        for (CallSite site : initialItems) {
+                            if (site.callerElement() != null) {
+                                expanded.add(elementKey(site.callerElement()));
+                                withChildren.add(new CallSite(site.display(), site.file(), site.offset(),
+                                        site.depth(), site.callerElement(), true));
+                                withChildren.addAll(findCallerSites(site.callerElement(), project, site.depth() + 1));
+                            } else {
+                                withChildren.add(site);
+                            }
+                        }
+                        initialItems = withChildren;
+                    }
+
                     EditorColorsScheme scheme = EditorColorsManager.getInstance().getGlobalScheme();
                     Font editorFont = new Font(scheme.getEditorFontName(), Font.PLAIN, scheme.getEditorFontSize());
 
-                    initialItems.sort(Comparator.comparing(CallSite::display));
-
+                    final List<CallSite> finalItems = initialItems;
                     ApplicationManager.getApplication().invokeLater(() ->
-                            showPopup(project, "Callers of " + startName, initialItems, expanded, editorFont));
+                            showPopup(project, "Callers of " + startName, finalItems, expanded, editorFont));
 
                 } catch (Exception ex) {
                     System.out.println("[CallHierarchy] exception: " + ex);
@@ -362,22 +361,7 @@ public class CallHierarchyPopupAction extends AnAction {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 try {
-                    List<CallSite> newSites = new ArrayList<>();
-                    for (PsiReference ref : ReferencesSearch.search(callerEl, GlobalSearchScope.projectScope(project)).findAll()) {
-                        if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
-                        PsiNamedElement newCallerEl = ReadAction.compute(() ->
-                                PsiTreeUtil.getParentOfType(ref.getElement(), PsiMethod.class));
-
-                        CallSite site = ReadAction.compute(() -> {
-                            PsiElement el = ref.getElement();
-                            String display = buildDisplay(project, newCallerEl, el);
-                            return new CallSite(display, el.getContainingFile().getVirtualFile(),
-                                    el.getTextOffset(), insertDepth, newCallerEl, false);
-                        });
-
-                        System.out.println("[CallHierarchy] expanded caller: " + site.display());
-                        newSites.add(site);
-                    }
+                    List<CallSite> newSites = findCallerSites(callerEl, project, insertDepth);
 
                     if (!newSites.isEmpty()) {
                         newSites.sort(Comparator.comparing(CallSite::display));
@@ -648,6 +632,32 @@ public class CallHierarchyPopupAction extends AnAction {
                 (int)(a.getGreen() * (1 - t) + b.getGreen() * t),
                 (int)(a.getBlue() * (1 - t) + b.getBlue() * t)
         );
+    }
+
+    private static List<CallSite> findCallerSites(PsiNamedElement element, Project project, int depth) {
+        List<CallSite> sites = new ArrayList<>();
+        for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
+            if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
+            PsiMethod callerEl = ReadAction.compute(() ->
+                    PsiTreeUtil.getParentOfType(ref.getElement(), PsiMethod.class));
+            boolean hasChildren = callerEl != null && hasCallers(callerEl, project);
+            CallSite site = ReadAction.compute(() -> {
+                PsiElement el = ref.getElement();
+                String display = buildDisplay(project, callerEl, el);
+                return new CallSite(display, el.getContainingFile().getVirtualFile(),
+                        el.getTextOffset(), depth, hasChildren ? callerEl : null, false);
+            });
+            sites.add(site);
+        }
+        sites.sort(Comparator.comparing(CallSite::display));
+        return sites;
+    }
+
+    private static boolean hasCallers(PsiNamedElement element, Project project) {
+        for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
+            if (ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) return true;
+        }
+        return false;
     }
 
     private static void applyFontRecursively(Component c, Font font) {
