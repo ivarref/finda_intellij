@@ -46,6 +46,11 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -76,12 +81,12 @@ public class CallHierarchyPopupAction extends AnAction {
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
-        System.out.println("[CallHierarchy] actionPerformed called");
+        log("[CallHierarchy] actionPerformed called");
         Editor editor = e.getData(CommonDataKeys.EDITOR);
         PsiFile psiFile = e.getData(CommonDataKeys.PSI_FILE);
         Project project = e.getProject();
         if (editor == null || psiFile == null || project == null) {
-            System.out.println("[CallHierarchy] early return: null editor/psiFile/project");
+            log("[CallHierarchy] early return: null editor/psiFile/project");
             return;
         }
 
@@ -90,7 +95,7 @@ public class CallHierarchyPopupAction extends AnAction {
         new Task.Backgroundable(project, "Finding callers...") {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
-                System.out.println("[CallHierarchy] background task started");
+                log("[CallHierarchy] background task started");
                 try {
                     PsiNamedElement startElement = ReadAction.compute(() -> {
                         PsiElement el = psiFile.findElementAt(offset);
@@ -99,19 +104,19 @@ public class CallHierarchyPopupAction extends AnAction {
                     });
 
                     if (startElement == null) {
-                        System.out.println("[CallHierarchy] early return: no enclosing PsiMethod at caret");
+                        log("[CallHierarchy] early return: no enclosing PsiMethod at caret");
                         return;
                     }
 
                     String startName = ReadAction.compute(startElement::getName);
-                    System.out.println("[CallHierarchy] starting from: " + startName);
+                    log("[CallHierarchy] starting from: " + startName);
 
                     Set<String> expanded = new HashSet<>();
                     expanded.add(elementKey(startElement));
 
                     List<CallSite> initialItems = findCallerSites(startElement, project, 1);
 
-                    System.out.println("[CallHierarchy] found " + initialItems.size() + " initial callers");
+                    log("[CallHierarchy] found " + initialItems.size() + " initial callers");
                     if (initialItems.isEmpty()) return;
 
                     if (initialItems.size() < 5) {
@@ -137,8 +142,8 @@ public class CallHierarchyPopupAction extends AnAction {
                             showPopup(project, "Callers of " + startName, finalItems, expanded, editorFont));
 
                 } catch (Exception ex) {
-                    System.out.println("[CallHierarchy] exception: " + ex);
-                    ex.printStackTrace(System.out);
+                    log("[CallHierarchy] exception: " + ex);
+                    log(java.util.Arrays.stream(ex.getStackTrace()).map(StackTraceElement::toString).collect(java.util.stream.Collectors.joining("\n  ", "  ", "")));
                 }
             }
         }.queue();
@@ -345,7 +350,7 @@ public class CallHierarchyPopupAction extends AnAction {
         try {
             callerKey = elementKey(callerEl);
         } catch (Exception e) {
-            System.out.println("[CallHierarchy] callerElement is invalid, cannot expand");
+            log("[CallHierarchy] callerElement is invalid, cannot expand");
             return;
         }
         if (expanded.contains(callerKey)) return;
@@ -385,8 +390,8 @@ public class CallHierarchyPopupAction extends AnAction {
                         });
                     }
                 } catch (Exception ex) {
-                    System.out.println("[CallHierarchy] expand error: " + ex);
-                    ex.printStackTrace(System.out);
+                    log("[CallHierarchy] expand error: " + ex);
+                    log(java.util.Arrays.stream(ex.getStackTrace()).map(StackTraceElement::toString).collect(java.util.stream.Collectors.joining("\n  ", "  ", "")));
                 }
             }
         }.queue();
@@ -658,6 +663,15 @@ public class CallHierarchyPopupAction extends AnAction {
             if (ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) return true;
         }
         return false;
+    }
+
+    private static final Path LOG_FILE = Paths.get(System.getProperty("user.home"), ".callhierarchypopup.log");
+
+    private static void log(String msg) {
+        if (!Files.exists(LOG_FILE)) return;
+        try {
+            Files.writeString(LOG_FILE, msg + "\n", StandardOpenOption.APPEND);
+        } catch (IOException ignored) {}
     }
 
     private static void applyFontRecursively(Component c, Font font) {
