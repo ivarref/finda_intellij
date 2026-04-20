@@ -24,6 +24,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiCallExpression;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
@@ -202,12 +203,24 @@ public class CallHierarchyPopupAction extends AnAction {
         previewScroll.setPreferredSize(new Dimension(previewWidth, minPreviewH));
         previewScroll.setMinimumSize(new Dimension(200, minPreviewH));
 
+        JLabel headerLabel = new JLabel(" ");
+        headerLabel.setFont(editorFont);
+        headerLabel.setOpaque(true);
+        headerLabel.setBackground(jbList.getBackground());
+        headerLabel.setBorder(BorderFactory.createEmptyBorder(2, 6, 4, 6));
+
+        JPanel previewPanel = new JPanel(new BorderLayout());
+        previewPanel.add(headerLabel, BorderLayout.NORTH);
+        previewPanel.add(previewScroll, BorderLayout.CENTER);
+
         jbList.addListSelectionListener(ev -> {
             if (ev.getValueIsAdjusting()) return;
             int idx = jbList.getSelectedIndex();
-            updatePreview(previewPane, idx >= 0 ? model.getElementAt(idx) : null, editorFont, project);
+            updatePreview(previewPane, headerLabel, idx >= 0 ? model.getElementAt(idx) : null, editorFont, project);
         });
-        if (model.size() > 0) updatePreview(previewPane, model.getElementAt(initialIndex), editorFont, project);
+        if (model.size() > 0) {
+            updatePreview(previewPane, headerLabel, model.getElementAt(initialIndex), editorFont, project);
+        }
 
         JBPopup[] popupRef = new JBPopup[1];
 
@@ -293,7 +306,7 @@ public class CallHierarchyPopupAction extends AnAction {
         JScrollPane scrollPane = new JScrollPane(jbList);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
 
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, scrollPane, previewScroll);
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, scrollPane, previewPanel);
         splitPane.setDividerSize(4);
         splitPane.setBorder(BorderFactory.createEmptyBorder());
         splitPane.setResizeWeight(0.0);
@@ -513,9 +526,9 @@ public class CallHierarchyPopupAction extends AnAction {
         return cls != null ? cls.getName() : "";
     }
 
-    private static void updatePreview(JTextPane previewPane, @Nullable CallSite site,
-                                      Font editorFont, Project project) {
-        if (site == null) { previewPane.setText(""); return; }
+    private static void updatePreview(JTextPane previewPane, JLabel headerLabel,
+                                      @Nullable CallSite site, Font editorFont, Project project) {
+        if (site == null) { headerLabel.setText(" "); previewPane.setText(""); return; }
         com.intellij.openapi.editor.Document doc = ReadAction.compute(() ->
                 FileDocumentManager.getInstance().getDocument(site.file()));
         if (doc == null) { previewPane.setText("(no preview)"); return; }
@@ -544,6 +557,46 @@ public class CallHierarchyPopupAction extends AnAction {
         Color rawCaretBg = scheme.getColor(EditorColors.CARET_ROW_COLOR);
         Color caretBg = rawCaretBg != null ? rawCaretBg : defaultBg;
         Color lineNumFg = blend(defaultFg, defaultBg, 0.55f);
+
+        // Build header: yellow filename, relative path, syntax-highlighted function signature, then '...'
+        String funcDef = ReadAction.compute(() -> {
+            com.intellij.psi.PsiFile pf = PsiManager.getInstance(project).findFile(site.file());
+            if (pf == null) return "";
+            PsiElement el = pf.findElementAt(site.offset());
+            PsiNamedElement func = findEnclosingFunction(el);
+            if (func == null) return "";
+            // Java: use PSI range from function start up to (not including) the body opener
+            if (func instanceof PsiMethod method && method.getBody() != null) {
+                return doc.getText(new TextRange(func.getTextOffset(),
+                        method.getBody().getTextOffset())).stripTrailing();
+            }
+            // Fallback: read lines until one ends with ':' or '{', cap at 8
+            int funcLine = doc.getLineNumber(func.getTextOffset());
+            StringBuilder sb = new StringBuilder();
+            for (int i = funcLine; i < Math.min(doc.getLineCount(), funcLine + 8); i++) {
+                String line = doc.getText(new TextRange(doc.getLineStartOffset(i), doc.getLineEndOffset(i)));
+                if (i > funcLine) sb.append("\n");
+                sb.append(line);
+                if (line.stripTrailing().endsWith("{") || line.stripTrailing().endsWith(":")) break;
+            }
+            return sb.toString().stripTrailing();
+        });
+        String basePath = project.getBasePath();
+        String filePath = site.file().getPath();
+        String relativePath = (basePath != null && filePath.startsWith(basePath))
+                ? filePath.substring(basePath.length()).replaceFirst("^/", "")
+                : filePath;
+        String pathHex = toHex(lineNumFg);
+        String fgHex = toHex(defaultFg);
+        String escapedPath = relativePath.replace("&", "&amp;").replace("<", "&lt;");
+        List<int[]> defTokens = tokenizeSnippet(funcDef, sh, scheme);
+        String defHtml = buildHighlightedHtml(funcDef, defTokens, fgHex);
+        headerLabel.setText("<html>" +
+                "<span style='color:#FFFF00'>" + site.file().getName() + "</span>" +
+                " <span style='color:" + pathHex + "'>" + escapedPath + "</span>" +
+                "<br>" + defHtml +
+                "<br><span style='color:" + pathHex + "'>...</span>" +
+                "</html>");
 
         String[] lines = snippet.split("\n", -1);
         int snippetOffset = 0;
@@ -642,6 +695,36 @@ public class CallHierarchyPopupAction extends AnAction {
         javax.swing.text.StyleConstants.setItalic(attrs, italic);
         try { doc.insertString(doc.getLength(), text, attrs); }
         catch (javax.swing.text.BadLocationException ignored) {}
+    }
+
+    private static String toHex(Color c) {
+        return String.format("#%06X", c.getRGB() & 0xFFFFFF);
+    }
+
+    private static String buildHighlightedHtml(String text, List<int[]> tokens, String defaultFgHex) {
+        StringBuilder html = new StringBuilder();
+        int cursor = 0;
+        for (int[] t : tokens) {
+            if (t[0] > cursor) {
+                appendHtmlSpan(html, text.substring(cursor, t[0]), defaultFgHex, false);
+                cursor = t[0];
+            }
+            String color = t[2] != -1 ? toHex(new Color(t[2])) : defaultFgHex;
+            appendHtmlSpan(html, text.substring(t[0], t[1]), color, (t[3] & Font.BOLD) != 0);
+            cursor = t[1];
+        }
+        if (cursor < text.length()) {
+            appendHtmlSpan(html, text.substring(cursor), defaultFgHex, false);
+        }
+        return html.toString();
+    }
+
+    private static void appendHtmlSpan(StringBuilder sb, String text, String colorHex, boolean bold) {
+        if (text.isEmpty()) return;
+        String escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>");
+        sb.append("<span style='color:").append(colorHex);
+        if (bold) sb.append(";font-weight:bold");
+        sb.append("'>").append(escaped).append("</span>");
     }
 
     private static Color blend(Color a, Color b, float t) {
