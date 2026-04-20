@@ -100,7 +100,7 @@ public class CallHierarchyPopupAction extends AnAction {
                     PsiNamedElement startElement = ReadAction.compute(() -> {
                         PsiElement el = psiFile.findElementAt(offset);
                         if (el == null) return null;
-                        return PsiTreeUtil.getParentOfType(el, PsiMethod.class, false);
+                        return findEnclosingFunction(el);
                     });
 
                     if (startElement == null) {
@@ -642,9 +642,8 @@ public class CallHierarchyPopupAction extends AnAction {
     private static List<CallSite> findCallerSites(PsiNamedElement element, Project project, int depth) {
         List<CallSite> sites = new ArrayList<>();
         for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
-            if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
-            PsiMethod callerEl = ReadAction.compute(() ->
-                    PsiTreeUtil.getParentOfType(ref.getElement(), PsiMethod.class));
+            if (!ReadAction.compute(() -> isCallReference(ref.getElement().getParent()))) continue;
+            PsiNamedElement callerEl = ReadAction.compute(() -> findEnclosingFunction(ref.getElement()));
             boolean hasChildren = callerEl != null && hasCallers(callerEl, project);
             CallSite site = ReadAction.compute(() -> {
                 PsiElement el = ref.getElement();
@@ -660,9 +659,34 @@ public class CallHierarchyPopupAction extends AnAction {
 
     private static boolean hasCallers(PsiNamedElement element, Project project) {
         for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
-            if (ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) return true;
+            if (ReadAction.compute(() -> isCallReference(ref.getElement().getParent()))) return true;
         }
         return false;
+    }
+
+    /** Matches Java PsiCallExpression, Python PyCallExpression, and any other language's call node. */
+    private static boolean isCallReference(PsiElement parent) {
+        if (parent instanceof PsiCallExpression) return true;
+        return parent.getClass().getSimpleName().contains("Call");
+    }
+
+    /** Finds the nearest enclosing function/method element regardless of language. */
+    private static @Nullable PsiNamedElement findEnclosingFunction(@Nullable PsiElement el) {
+        PsiElement current = el;
+        while (current != null) {
+            if (current instanceof PsiNamedElement named && named.getName() != null && isFunctionLike(current)) {
+                return named;
+            }
+            current = current.getParent();
+        }
+        return null;
+    }
+
+    /** True for Java PsiMethod, Python PyFunction, Kotlin KtNamedFunction, etc. */
+    private static boolean isFunctionLike(PsiElement el) {
+        if (el instanceof PsiMethod) return true;
+        String name = el.getClass().getSimpleName();
+        return name.contains("Function") || name.contains("Method");
     }
 
     private static final Path LOG_FILE = Paths.get(System.getProperty("user.home"), ".callhierarchypopup.log");
