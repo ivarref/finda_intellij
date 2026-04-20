@@ -7,6 +7,7 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -114,10 +115,15 @@ public class CallHierarchyPopupAction extends AnAction {
                     Set<String> expanded = new HashSet<>();
                     expanded.add(elementKey(startElement));
 
-                    List<CallSite> initialItems = findCallerSites(startElement, project, 1);
+                    CallSite rootSite = ReadAction.compute(() -> {
+                        String display = buildDisplay(project, startElement, startElement);
+                        return new CallSite(display, startElement.getContainingFile().getVirtualFile(),
+                                startElement.getTextOffset(), 1, startElement, true);
+                    });
+
+                    List<CallSite> initialItems = findCallerSites(startElement, project, 2);
 
                     log("[CallHierarchy] found " + initialItems.size() + " initial callers");
-                    if (initialItems.isEmpty()) return;
 
                     if (initialItems.size() < 5) {
                         List<CallSite> withChildren = new ArrayList<>();
@@ -137,7 +143,10 @@ public class CallHierarchyPopupAction extends AnAction {
                     EditorColorsScheme scheme = EditorColorsManager.getInstance().getGlobalScheme();
                     Font editorFont = new Font(scheme.getEditorFontName(), Font.PLAIN, scheme.getEditorFontSize());
 
-                    final List<CallSite> finalItems = initialItems;
+                    List<CallSite> allItems = new ArrayList<>();
+                    allItems.add(rootSite);
+                    allItems.addAll(initialItems);
+                    final List<CallSite> finalItems = allItems;
                     ApplicationManager.getApplication().invokeLater(() ->
                             showPopup(project, "Callers of " + startName, finalItems, expanded, editorFont));
 
@@ -154,6 +163,9 @@ public class CallHierarchyPopupAction extends AnAction {
         DefaultListModel<CallSite> model = new DefaultListModel<>();
         items.forEach(model::addElement);
 
+        EditorColorsScheme listScheme = EditorColorsManager.getInstance().getGlobalScheme();
+        Color caretRowBg = listScheme.getColor(EditorColors.CARET_ROW_COLOR);
+
         JBList<CallSite> jbList = new JBList<>(model);
         jbList.setFont(editorFont);
         jbList.setCellRenderer((lst, value, index, isSelected, hasFocus) -> {
@@ -164,8 +176,8 @@ public class CallHierarchyPopupAction extends AnAction {
             label.setOpaque(true);
             label.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
             if (isSelected) {
-                label.setBackground(lst.getSelectionBackground());
-                label.setForeground(lst.getSelectionForeground());
+                label.setBackground(caretRowBg != null ? caretRowBg : lst.getSelectionBackground());
+                label.setForeground(lst.getForeground());
             } else {
                 label.setBackground(lst.getBackground());
                 label.setForeground(lst.getForeground());
@@ -192,9 +204,9 @@ public class CallHierarchyPopupAction extends AnAction {
         jbList.addListSelectionListener(ev -> {
             if (ev.getValueIsAdjusting()) return;
             int idx = jbList.getSelectedIndex();
-            updatePreview(previewPane, idx >= 0 ? model.getElementAt(idx) : null, editorFont, jbList, project);
+            updatePreview(previewPane, idx >= 0 ? model.getElementAt(idx) : null, editorFont, project);
         });
-        if (model.size() > 0) updatePreview(previewPane, model.getElementAt(0), editorFont, jbList, project);
+        if (model.size() > 0) updatePreview(previewPane, model.getElementAt(0), editorFont, project);
 
         JBPopup[] popupRef = new JBPopup[1];
 
@@ -501,7 +513,7 @@ public class CallHierarchyPopupAction extends AnAction {
     }
 
     private static void updatePreview(JTextPane previewPane, @Nullable CallSite site,
-                                      Font editorFont, JBList<CallSite> jbList, Project project) {
+                                      Font editorFont, Project project) {
         if (site == null) { previewPane.setText(""); return; }
         com.intellij.openapi.editor.Document doc = ReadAction.compute(() ->
                 FileDocumentManager.getInstance().getDocument(site.file()));
@@ -528,8 +540,8 @@ public class CallHierarchyPopupAction extends AnAction {
 
         Color defaultFg = scheme.getDefaultForeground();
         Color defaultBg = scheme.getDefaultBackground();
-        Color selBg = jbList.getSelectionBackground();
-        Color selFg = jbList.getSelectionForeground();
+        Color rawCaretBg = scheme.getColor(EditorColors.CARET_ROW_COLOR);
+        Color caretBg = rawCaretBg != null ? rawCaretBg : defaultBg;
         Color lineNumFg = blend(defaultFg, defaultBg, 0.55f);
 
         String[] lines = snippet.split("\n", -1);
@@ -539,15 +551,15 @@ public class CallHierarchyPopupAction extends AnAction {
             int absLine = fStartLine + li;
             boolean isTarget = absLine == targetLine;
             String lineText = lines[li];
-            Color bg = isTarget ? selBg : defaultBg;
+            Color bg = isTarget ? caretBg : defaultBg;
 
             if (isTarget) targetDocOffset = styledDoc.getLength();
 
             // Line number prefix
             appendStr(styledDoc, String.format("%4d  ", absLine + 1), editorFont,
-                    isTarget ? selFg : lineNumFg, bg, false, false);
+                    lineNumFg, bg, false, false);
 
-            // Line content with syntax highlighting
+            // Line content with syntax highlighting (fg unchanged on target line — only bg differs)
             int lineEnd = snippetOffset + lineText.length();
             int cursor = snippetOffset;
             for (int[] t : tokens) {
@@ -555,20 +567,20 @@ public class CallHierarchyPopupAction extends AnAction {
                 if (t[0] >= lineEnd) break;
                 if (t[0] > cursor) {
                     appendStr(styledDoc, snippet.substring(cursor, t[0]), editorFont,
-                            isTarget ? selFg : defaultFg, bg, false, false);
+                            defaultFg, bg, false, false);
                     cursor = t[0];
                 }
                 int tEnd = Math.min(t[1], lineEnd);
-                Color fg = isTarget ? selFg : (t[2] != -1 ? new Color(t[2]) : defaultFg);
+                Color fg = t[2] != -1 ? new Color(t[2]) : defaultFg;
                 appendStr(styledDoc, snippet.substring(cursor, tEnd), editorFont,
                         fg, bg, (t[3] & Font.BOLD) != 0, (t[3] & Font.ITALIC) != 0);
                 cursor = tEnd;
             }
             if (cursor < lineEnd) {
                 appendStr(styledDoc, snippet.substring(cursor, lineEnd), editorFont,
-                        isTarget ? selFg : defaultFg, bg, false, false);
+                        defaultFg, bg, false, false);
             }
-            appendStr(styledDoc, "\n", editorFont, isTarget ? selFg : defaultFg, bg, false, false);
+            appendStr(styledDoc, "\n", editorFont, defaultFg, bg, false, false);
             snippetOffset += lineText.length() + 1;
         }
 

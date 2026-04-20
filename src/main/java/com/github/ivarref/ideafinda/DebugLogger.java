@@ -22,7 +22,6 @@ public class DebugLogger {
     public static String top() {
         String v = middle();
         return v;
-
     }
 
     public static String middle() {
