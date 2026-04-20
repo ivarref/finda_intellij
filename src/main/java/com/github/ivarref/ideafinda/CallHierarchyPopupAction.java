@@ -186,7 +186,8 @@ public class CallHierarchyPopupAction extends AnAction {
         });
         jbList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         jbList.setVisibleRowCount(Math.min(PAGE_SIZE, Math.max(1, model.size())));
-        if (model.size() > 0) jbList.setSelectedIndex(0);
+        int initialIndex = model.size() > 1 ? 1 : 0;
+        if (model.size() > 0) jbList.setSelectedIndex(initialIndex);
 
         JTextPane previewPane = new JTextPane();
         previewPane.setEditable(false);
@@ -206,7 +207,7 @@ public class CallHierarchyPopupAction extends AnAction {
             int idx = jbList.getSelectedIndex();
             updatePreview(previewPane, idx >= 0 ? model.getElementAt(idx) : null, editorFont, project);
         });
-        if (model.size() > 0) updatePreview(previewPane, model.getElementAt(0), editorFont, project);
+        if (model.size() > 0) updatePreview(previewPane, model.getElementAt(initialIndex), editorFont, project);
 
         JBPopup[] popupRef = new JBPopup[1];
 
