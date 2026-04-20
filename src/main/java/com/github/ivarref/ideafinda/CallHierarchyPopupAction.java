@@ -570,14 +570,21 @@ public class CallHierarchyPopupAction extends AnAction {
                 return doc.getText(new TextRange(func.getTextOffset(),
                         method.getBody().getTextOffset())).stripTrailing();
             }
-            // Fallback: read lines until one ends with ':' or '{', cap at 8
+            // Fallback: read lines until one ends with ':' or '{' (ignoring comments), cap at 8
             int funcLine = doc.getLineNumber(func.getTextOffset());
             StringBuilder sb = new StringBuilder();
-            for (int i = funcLine; i < Math.min(doc.getLineCount(), funcLine + 8); i++) {
+            for (int i = funcLine; i < doc.getLineCount(); i++) {
                 String line = doc.getText(new TextRange(doc.getLineStartOffset(i), doc.getLineEndOffset(i)));
                 if (i > funcLine) sb.append("\n");
                 sb.append(line);
-                if (line.stripTrailing().endsWith("{") || line.stripTrailing().endsWith(":")) break;
+                // Strip inline comments before checking the terminator character
+                String check = line;
+                int hash = check.indexOf('#');
+                if (hash >= 0) check = check.substring(0, hash);
+                int slash = check.indexOf("//");
+                if (slash >= 0) check = check.substring(0, slash);
+                check = check.stripTrailing();
+                if (check.endsWith("{") || check.endsWith(":")) break;
             }
             return sb.toString().stripTrailing();
         });
