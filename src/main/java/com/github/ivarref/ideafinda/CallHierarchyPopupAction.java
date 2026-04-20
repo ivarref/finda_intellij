@@ -243,11 +243,11 @@ public class CallHierarchyPopupAction extends AnAction {
                 DebugLogger.info("received keypress :-)");
                 switch (e.getKeyCode()) {
                     case KeyEvent.VK_L -> {
-                        expandSelected(project, jbList, model, expanded);
+                        expandOrEnter(project, jbList, model, expanded);
                         e.consume();
                     }
                     case KeyEvent.VK_RIGHT, KeyEvent.VK_KP_RIGHT -> {
-                        expandSelected(project, jbList, model, expanded);
+                        expandOrEnter(project, jbList, model, expanded);
                         e.consume();
                     }
                     case KeyEvent.VK_H -> {
@@ -344,7 +344,7 @@ public class CallHierarchyPopupAction extends AnAction {
             if (c == null) return false;
             int code = e.getKeyCode();
             if (code == KeyEvent.VK_RIGHT || code == KeyEvent.VK_KP_RIGHT) {
-                expandSelected(project, jbList, model, expanded);
+                expandOrEnter(project, jbList, model, expanded);
                 return true;
             } else if (code == KeyEvent.VK_LEFT || code == KeyEvent.VK_KP_LEFT) {
                 collapseOrGoToParent(jbList, model, expanded);
@@ -362,6 +362,23 @@ public class CallHierarchyPopupAction extends AnAction {
         });
 
         popup.showCenteredInCurrentWindow(project);
+    }
+
+    private static void expandOrEnter(Project project, JBList<CallSite> jbList,
+                                       DefaultListModel<CallSite> model, Set<String> expanded) {
+        int idx = jbList.getSelectedIndex();
+        if (idx < 0) return;
+        CallSite selected = model.getElementAt(idx);
+        if (selected.expanded()) {
+            // Already expanded: jump to first child
+            int childIdx = idx + 1;
+            if (childIdx < model.size() && model.getElementAt(childIdx).depth() > selected.depth()) {
+                jbList.setSelectedIndex(childIdx);
+                jbList.ensureIndexIsVisible(childIdx);
+            }
+        } else {
+            expandSelected(project, jbList, model, expanded);
+        }
     }
 
     private static void expandSelected(Project project, JBList<CallSite> jbList,
@@ -593,6 +610,15 @@ public class CallHierarchyPopupAction extends AnAction {
         String relativePath = (basePath != null && filePath.startsWith(basePath))
                 ? filePath.substring(basePath.length()).replaceFirst("^/", "")
                 : filePath;
+        // Normalize indentation: 2 spaces for the def line, 4 spaces for parameter lines
+        String[] defLines = funcDef.split("\n", -1);
+        StringBuilder normalizedDef = new StringBuilder();
+        for (int i = 0; i < defLines.length; i++) {
+            if (i > 0) normalizedDef.append("\n");
+            normalizedDef.append(i == 0 ? "  " : "    ").append(defLines[i].stripLeading());
+        }
+        funcDef = normalizedDef.toString();
+
         String pathHex = toHex(lineNumFg);
         String fgHex = toHex(defaultFg);
         String escapedPath = relativePath.replace("&", "&amp;").replace("<", "&lt;");
