@@ -815,13 +815,52 @@ public class CallHierarchyPopupAction extends AnAction {
     /** Finds the nearest enclosing function/method element regardless of language. */
     private static @Nullable PsiNamedElement findEnclosingFunction(@Nullable PsiElement el) {
         PsiElement current = el;
-        while (current != null) {
+        while (current != null && !(current instanceof PsiFile)) {
+            String simpleName = current.getClass().getSimpleName();
             if (current instanceof PsiNamedElement named && named.getName() != null && isFunctionLike(current)) {
+                log("[CallHierarchy] findEnclosingFunction matched: " + simpleName + " name=" + named.getName());
                 return named;
             }
+            // Clojure/Cursive: detect (defn name [...] ...) list forms
+            PsiNamedElement clojureFunc = detectClojureDefn(current);
+            if (clojureFunc != null) {
+                log("[CallHierarchy] findEnclosingFunction matched Clojure defn: " + clojureFunc.getName());
+                return clojureFunc;
+            }
+            log("[CallHierarchy] findEnclosingFunction skip: " + simpleName
+                    + (current instanceof PsiNamedElement n2 ? " name=" + n2.getName() : ""));
             current = current.getParent();
         }
         return null;
+    }
+
+    /**
+     * Detects Clojure (defn name ...) / (defmacro name ...) / (defmulti name ...) list forms.
+     * Inspects the first two named children of any list-like element: if the first is a
+     * function-defining form (defn, defmacro, etc.) the second is the function name.
+     * Plain (def ...) variable definitions are excluded.
+     */
+    private static @Nullable PsiNamedElement detectClojureDefn(PsiElement el) {
+        String simpleName = el.getClass().getSimpleName();
+        if (!simpleName.contains("List") && !simpleName.contains("Form")) return null;
+        PsiElement[] children = el.getChildren();
+        PsiNamedElement first = null, second = null;
+        for (PsiElement child : children) {
+            if (child instanceof PsiNamedElement named && named.getName() != null) {
+                if (first == null) first = named;
+                else { second = named; break; }
+            }
+        }
+        if (first == null || second == null) return null;
+        String firstName = first.getName();
+        if (!isClojureFunctionDef(firstName)) return null;
+        return second;
+    }
+
+    /** Matches Clojure function-defining forms: defn, defn-, defmacro, defmulti, defmethod. */
+    private static boolean isClojureFunctionDef(String word) {
+        return word != null && (word.startsWith("defn") || word.equals("defmacro")
+                || word.equals("defmulti") || word.equals("defmethod"));
     }
 
     /** True for Java PsiMethod, Python PyFunction, Kotlin KtNamedFunction, etc. */
