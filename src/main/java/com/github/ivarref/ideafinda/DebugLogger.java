@@ -6,7 +6,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 
 public class DebugLogger {
-    
+
     private static final String findaDir = System.getProperty("user.home") + "/.finda";
 
     public static synchronized void info(String msg) {
@@ -17,5 +17,21 @@ public class DebugLogger {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public static String top() {
+        String v = middle();
+        return v;
+
+    }
+
+    public static String middle() {
+        String v = bottom();
+        return v + "middle";
+    }
+
+    public static String bottom() {
+        String v = "bottom";
+        return v;
     }
 }

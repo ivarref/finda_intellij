@@ -113,7 +113,7 @@ public class CallHierarchyPopupAction extends AnAction {
                     for (PsiReference ref : ReferencesSearch.search(startElement, GlobalSearchScope.projectScope(project)).findAll()) {
                         if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
                         PsiNamedElement callerEl = ReadAction.compute(() ->
-                                PsiTreeUtil.getParentOfType(ref.getElement(), PsiNamedElement.class));
+                                PsiTreeUtil.getParentOfType(ref.getElement(), PsiMethod.class));
 
                         CallSite site = ReadAction.compute(() -> {
                             PsiElement el = ref.getElement();
@@ -366,7 +366,7 @@ public class CallHierarchyPopupAction extends AnAction {
                     for (PsiReference ref : ReferencesSearch.search(callerEl, GlobalSearchScope.projectScope(project)).findAll()) {
                         if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
                         PsiNamedElement newCallerEl = ReadAction.compute(() ->
-                                PsiTreeUtil.getParentOfType(ref.getElement(), PsiNamedElement.class));
+                                PsiTreeUtil.getParentOfType(ref.getElement(), PsiMethod.class));
 
                         CallSite site = ReadAction.compute(() -> {
                             PsiElement el = ref.getElement();
