@@ -20,6 +20,7 @@ import com.intellij.openapi.ui.popup.JBPopupListener;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiCallExpression;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
@@ -93,21 +94,12 @@ public class CallHierarchyPopupAction extends AnAction {
                 try {
                     PsiNamedElement startElement = ReadAction.compute(() -> {
                         PsiElement el = psiFile.findElementAt(offset);
-                        System.out.println("[CallHierarchy] element at caret: " + el
-                                + " class=" + (el != null ? el.getClass().getName() : "null"));
                         if (el == null) return null;
-                        PsiElement current = el;
-                        while (current != null) {
-                            if (current instanceof PsiNamedElement named && named.getName() != null) {
-                                return named;
-                            }
-                            current = current.getParent();
-                        }
-                        return null;
+                        return PsiTreeUtil.getParentOfType(el, PsiMethod.class, false);
                     });
 
                     if (startElement == null) {
-                        System.out.println("[CallHierarchy] early return: no enclosing PsiNamedElement at caret");
+                        System.out.println("[CallHierarchy] early return: no enclosing PsiMethod at caret");
                         return;
                     }
 
@@ -119,6 +111,7 @@ public class CallHierarchyPopupAction extends AnAction {
 
                     List<CallSite> initialItems = new ArrayList<>();
                     for (PsiReference ref : ReferencesSearch.search(startElement, GlobalSearchScope.projectScope(project)).findAll()) {
+                        if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
                         PsiNamedElement callerEl = ReadAction.compute(() ->
                                 PsiTreeUtil.getParentOfType(ref.getElement(), PsiNamedElement.class));
 
@@ -371,6 +364,7 @@ public class CallHierarchyPopupAction extends AnAction {
                 try {
                     List<CallSite> newSites = new ArrayList<>();
                     for (PsiReference ref : ReferencesSearch.search(callerEl, GlobalSearchScope.projectScope(project)).findAll()) {
+                        if (!ReadAction.compute(() -> ref.getElement().getParent() instanceof PsiCallExpression)) continue;
                         PsiNamedElement newCallerEl = ReadAction.compute(() ->
                                 PsiTreeUtil.getParentOfType(ref.getElement(), PsiNamedElement.class));
 
