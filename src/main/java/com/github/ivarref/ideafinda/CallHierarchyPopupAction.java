@@ -307,6 +307,7 @@ public class CallHierarchyPopupAction extends AnAction {
         JScrollPane scrollPane = new JScrollPane(jbList);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.setPreferredSize(new Dimension(previewWidth, lineH * PAGE_SIZE));
+        scrollPane.setMinimumSize(new Dimension(200, lineH * 5));
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scrollPane, previewPanel);
         splitPane.setDividerSize(4);
@@ -797,7 +798,8 @@ public class CallHierarchyPopupAction extends AnAction {
             });
             sites.add(site);
         }
-        sites.sort(Comparator.comparing(CallSite::display));
+        sites.sort(Comparator.comparingInt((CallSite s) -> isPlainTextFile(s.file()) ? 1 : 0)
+                .thenComparing(CallSite::display));
         return sites;
     }
 
@@ -878,6 +880,14 @@ public class CallHierarchyPopupAction extends AnAction {
     private static boolean isClojureFunctionDef(String word) {
         return word != null && (word.startsWith("defn") || word.equals("defmacro")
                 || word.equals("defmulti") || word.equals("defmethod"));
+    }
+
+    private static final Set<String> PLAIN_TEXT_EXTENSIONS = Set.of(
+            "md", "markdown", "txt", "adoc", "rst", "org");
+
+    private static boolean isPlainTextFile(VirtualFile file) {
+        String ext = file.getExtension();
+        return ext != null && PLAIN_TEXT_EXTENSIONS.contains(ext.toLowerCase());
     }
 
     /** True for Java PsiMethod, Python PyFunction, Kotlin KtNamedFunction, etc. */
