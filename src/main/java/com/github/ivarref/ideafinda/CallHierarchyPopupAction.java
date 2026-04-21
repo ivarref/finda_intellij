@@ -61,7 +61,7 @@ import java.util.Set;
 
 public class CallHierarchyPopupAction extends AnAction {
 
-    private static final int PAGE_SIZE = 28;
+    private static final int PAGE_SIZE = 20;
 
     // display = label text only (no indentation); indentation and '>' are computed in the renderer
     record CallSite(String display, VirtualFile file, int offset, int depth,
@@ -197,11 +197,12 @@ public class CallHierarchyPopupAction extends AnAction {
         previewPane.setForeground(jbList.getForeground());
         JScrollPane previewScroll = new JScrollPane(previewPane);
         previewScroll.setBorder(BorderFactory.createEmptyBorder());
-        int minPreviewH = (editorFont.getSize() + 5) * 40;
+        int lineH = editorFont.getSize() + 5;
+        int minPreviewH = lineH * 40;
         FontMetrics previewFm = Toolkit.getDefaultToolkit().getFontMetrics(editorFont);
         int previewWidth = previewFm.charWidth('m') * (100 + 6) + 16; // 100 code + 6 line-num + margin
         previewScroll.setPreferredSize(new Dimension(previewWidth, minPreviewH));
-        previewScroll.setMinimumSize(new Dimension(200, minPreviewH));
+        previewScroll.setMinimumSize(new Dimension(200, lineH * 10));
 
         JLabel headerLabel = new JLabel(" ");
         headerLabel.setFont(editorFont);
@@ -305,8 +306,9 @@ public class CallHierarchyPopupAction extends AnAction {
 
         JScrollPane scrollPane = new JScrollPane(jbList);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.setPreferredSize(new Dimension(previewWidth, lineH * PAGE_SIZE));
 
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, scrollPane, previewPanel);
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scrollPane, previewPanel);
         splitPane.setDividerSize(4);
         splitPane.setBorder(BorderFactory.createEmptyBorder());
         splitPane.setResizeWeight(0.0);
@@ -784,7 +786,7 @@ public class CallHierarchyPopupAction extends AnAction {
     private static List<CallSite> findCallerSites(PsiNamedElement element, Project project, int depth) {
         List<CallSite> sites = new ArrayList<>();
         for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
-            if (!ReadAction.compute(() -> isCallReference(ref.getElement().getParent()))) continue;
+            if (!ReadAction.compute(() -> isCallReference(ref.getElement()))) continue;
             PsiNamedElement callerEl = ReadAction.compute(() -> findEnclosingFunction(ref.getElement()));
             boolean hasChildren = callerEl != null && hasCallers(callerEl, project);
             CallSite site = ReadAction.compute(() -> {
@@ -801,15 +803,30 @@ public class CallHierarchyPopupAction extends AnAction {
 
     private static boolean hasCallers(PsiNamedElement element, Project project) {
         for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
-            if (ReadAction.compute(() -> isCallReference(ref.getElement().getParent()))) return true;
+            if (ReadAction.compute(() -> isCallReference(ref.getElement()))) return true;
         }
         return false;
     }
 
-    /** Matches Java PsiCallExpression, Python PyCallExpression, and any other language's call node. */
-    private static boolean isCallReference(PsiElement parent) {
+    /**
+     * Returns true if refElement is a function/method call reference.
+     * Java/Kotlin: parent is a PsiCallExpression or has "Call" in its class name.
+     * Clojure/Lisp: refElement is the first named child of a list form (function position).
+     */
+    private static boolean isCallReference(PsiElement refElement) {
+        PsiElement parent = refElement.getParent();
         if (parent instanceof PsiCallExpression) return true;
-        return parent.getClass().getSimpleName().contains("Call");
+        String parentSimple = parent.getClass().getSimpleName();
+        if (parentSimple.contains("Call")) return true;
+        // Clojure: a symbol in function position is the first named child of a list form
+        if (parentSimple.contains("List") || parentSimple.contains("Form")) {
+            for (PsiElement child : parent.getChildren()) {
+                if (child instanceof PsiNamedElement named && named.getName() != null) {
+                    return child.getTextOffset() == refElement.getTextOffset();
+                }
+            }
+        }
+        return false;
     }
 
     /** Finds the nearest enclosing function/method element regardless of language. */
