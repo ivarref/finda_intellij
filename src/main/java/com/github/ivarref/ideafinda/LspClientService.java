@@ -109,10 +109,12 @@ public final class LspClientService implements Disposable {
         stderrDrain.setDaemon(true);
         stderrDrain.start();
 
-        LanguageServer srv = LSPLauncher.createClientLauncher(
+        var launcher = LSPLauncher.createClientLauncher(
                 new SimpleLanguageClient(),
                 proc.getInputStream(),
-                proc.getOutputStream()).getRemoteProxy();
+                proc.getOutputStream());
+        launcher.startListening();
+        LanguageServer srv = launcher.getRemoteProxy();
 
         InitializeParams initParams = new InitializeParams();
         initParams.setProcessId((int) ProcessHandle.current().pid());
@@ -167,6 +169,12 @@ public final class LspClientService implements Disposable {
                     SimpleLog.log("clojure-lsp not found!");
                 } else {
                     SimpleLog.log("clojure-lsp located at: '" + s + "'");
+                }
+                String ss = findInPath("clojure");
+                if (ss == null) {
+                    SimpleLog.log("Command 'clojure' not found!");
+                } else {
+                    SimpleLog.log("Command 'clojure' located at: '" + ss + "'");
                 }
                 yield s;
             }
