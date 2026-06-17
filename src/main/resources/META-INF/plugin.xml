@@ -19,11 +19,12 @@
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
+<!--    <depends>com.intellij.modules.lsp</depends>-->
 
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
-
+        <projectService serviceImplementation="com.github.ivarref.ideafinda.LspClientService"/>
     </extensions>
     <actions>
         <group id="com.github.ivarref.ChooseInitialNextAction"

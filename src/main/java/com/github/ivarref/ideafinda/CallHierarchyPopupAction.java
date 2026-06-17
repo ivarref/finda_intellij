@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
@@ -21,24 +22,20 @@ import com.intellij.openapi.ui.popup.JBPopupListener;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiCallExpression;
-import com.intellij.psi.PsiClass;
-import com.intellij.psi.PsiDocumentManager;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiMethod;
-import com.intellij.psi.PsiNamedElement;
-import com.intellij.psi.PsiReference;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.searches.ReferencesSearch;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.lexer.Lexer;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileTypes.SyntaxHighlighter;
 import com.intellij.openapi.fileTypes.SyntaxHighlighterFactory;
 import com.intellij.ui.components.JBList;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
+import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyPrepareParams;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.services.LanguageServer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -63,9 +60,8 @@ public class CallHierarchyPopupAction extends AnAction {
 
     private static final int PAGE_SIZE = 20;
 
-    // display = label text only (no indentation); indentation and '>' are computed in the renderer
     record CallSite(String display, VirtualFile file, int offset, int depth,
-                    @Nullable PsiNamedElement callerElement, boolean expanded) {}
+                    @Nullable CallHierarchyItem callerItem, boolean expanded) {}
 
     @Override
     public @NotNull ActionUpdateThread getActionUpdateThread() {
@@ -75,65 +71,89 @@ public class CallHierarchyPopupAction extends AnAction {
     @Override
     public void update(@NotNull AnActionEvent e) {
         Editor editor = e.getData(CommonDataKeys.EDITOR);
-        PsiFile psiFile = e.getData(CommonDataKeys.PSI_FILE);
-        e.getPresentation().setEnabledAndVisible(
-                editor != null && psiFile != null && e.getProject() != null
-        );
+        e.getPresentation().setEnabledAndVisible(editor != null && e.getProject() != null);
     }
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         log("[CallHierarchy] actionPerformed called");
         Editor editor = e.getData(CommonDataKeys.EDITOR);
-        PsiFile psiFile = e.getData(CommonDataKeys.PSI_FILE);
         Project project = e.getProject();
-        if (editor == null || psiFile == null || project == null) {
-            log("[CallHierarchy] early return: null editor/psiFile/project");
+        if (editor == null || project == null) {
+            log("[CallHierarchy] early return: null editor/project");
             return;
         }
 
         int offset = editor.getCaretModel().getOffset();
+        VirtualFile vFile = FileDocumentManager.getInstance().getFile(editor.getDocument());
+        if (vFile == null) {
+            log("[CallHierarchy] no VirtualFile for editor");
+            return;
+        }
 
         new Task.Backgroundable(project, "Finding callers...") {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 log("[CallHierarchy] background task started");
                 try {
-                    PsiNamedElement startElement = ReadAction.compute(() -> {
-                        PsiElement el = psiFile.findElementAt(offset);
-                        if (el == null) return null;
-                        return findEnclosingFunction(el);
-                    });
-
-                    if (startElement == null) {
-                        log("[CallHierarchy] early return: no enclosing PsiMethod at caret");
+                    LspClientService lsp = LspClientService.getInstance(project);
+                    LanguageServer server = lsp.getServerFor(vFile);
+                    if (server == null) {
+                        log("[CallHierarchy] no language server for extension: " + vFile.getExtension());
                         return;
                     }
 
-                    String startName = ReadAction.compute(startElement::getName);
+                    ReadAction.run(() -> lsp.ensureOpen(vFile, editor.getDocument()));
+
+                    Position pos = ReadAction.compute(() ->
+                            LspClientService.offsetToPosition(editor.getDocument(), offset));
+
+                    CallHierarchyPrepareParams prepareParams = new CallHierarchyPrepareParams();
+                    prepareParams.setTextDocument(new TextDocumentIdentifier(LspClientService.toUri(vFile)));
+                    prepareParams.setPosition(pos);
+
+                    List<CallHierarchyItem> items = server.getTextDocumentService()
+                            .prepareCallHierarchy(prepareParams)
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS);
+
+                    if (items == null || items.isEmpty()) {
+                        log("[CallHierarchy] no call hierarchy item at caret position");
+                        return;
+                    }
+
+                    CallHierarchyItem rootItem = items.get(0);
+                    String startName = buildItemLabel(rootItem);
                     log("[CallHierarchy] starting from: " + startName);
 
                     Set<String> expanded = new HashSet<>();
-                    expanded.add(elementKey(startElement));
+                    expanded.add(itemKey(rootItem));
 
-                    CallSite rootSite = ReadAction.compute(() -> {
-                        String display = buildDisplay(project, startElement, startElement);
-                        return new CallSite(display, startElement.getContainingFile().getVirtualFile(),
-                                startElement.getTextOffset(), 1, startElement, true);
+                    VirtualFile rootFile = LspClientService.fromUri(rootItem.getUri());
+                    if (rootFile == null) {
+                        log("[CallHierarchy] cannot resolve root file URI: " + rootItem.getUri());
+                        return;
+                    }
+
+                    int rootOffset = ReadAction.compute(() -> {
+                        Document doc = FileDocumentManager.getInstance().getDocument(rootFile);
+                        if (doc == null) return 0;
+                        return LspClientService.positionToOffset(doc, rootItem.getSelectionRange().getStart());
                     });
 
-                    List<CallSite> initialItems = findCallerSites(startElement, project, 2);
+                    CallSite rootSite = new CallSite(buildLspDisplay(rootItem, null),
+                            rootFile, rootOffset, 1, rootItem, true);
 
+                    List<CallSite> initialItems = findCallerSitesLsp(server, rootItem, project, 2);
                     log("[CallHierarchy] found " + initialItems.size() + " initial callers");
 
                     if (initialItems.size() < 5) {
                         List<CallSite> withChildren = new ArrayList<>();
                         for (CallSite site : initialItems) {
-                            if (site.callerElement() != null) {
-                                expanded.add(elementKey(site.callerElement()));
+                            if (site.callerItem() != null) {
+                                expanded.add(itemKey(site.callerItem()));
                                 withChildren.add(new CallSite(site.display(), site.file(), site.offset(),
-                                        site.depth(), site.callerElement(), true));
-                                withChildren.addAll(findCallerSites(site.callerElement(), project, site.depth() + 1));
+                                        site.depth(), site.callerItem(), true));
+                                withChildren.addAll(findCallerSitesLsp(server, site.callerItem(), project, site.depth() + 1));
                             } else {
                                 withChildren.add(site);
                             }
@@ -153,7 +173,8 @@ public class CallHierarchyPopupAction extends AnAction {
 
                 } catch (Exception ex) {
                     log("[CallHierarchy] exception: " + ex);
-                    log(java.util.Arrays.stream(ex.getStackTrace()).map(StackTraceElement::toString).collect(java.util.stream.Collectors.joining("\n  ", "  ", "")));
+                    log(java.util.Arrays.stream(ex.getStackTrace()).map(StackTraceElement::toString)
+                            .collect(java.util.stream.Collectors.joining("\n  ", "  ", "")));
                 }
             }
         }.queue();
@@ -171,7 +192,7 @@ public class CallHierarchyPopupAction extends AnAction {
         jbList.setFont(editorFont);
         jbList.setCellRenderer((lst, value, index, isSelected, hasFocus) -> {
             String indent = " ".repeat(2 * (value.depth() - 1));
-            String indicator = value.expanded() ? "*" : value.callerElement() != null ? ">" : ".";
+            String indicator = value.expanded() ? "*" : value.callerItem() != null ? ">" : ".";
             JLabel label = new JLabel(indent + indicator + " " + value.display());
             label.setFont(editorFont);
             label.setOpaque(true);
@@ -186,7 +207,7 @@ public class CallHierarchyPopupAction extends AnAction {
             return label;
         });
         jbList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        jbList.setVisibleRowCount(Math.min(PAGE_SIZE, Math.max(1, model.size())));
+        jbList.setVisibleRowCount(Math.min(PAGE_SIZE, Math.max(5, model.size())));
         int initialIndex = model.size() > 1 ? 1 : 0;
         if (model.size() > 0) jbList.setSelectedIndex(initialIndex);
 
@@ -198,9 +219,9 @@ public class CallHierarchyPopupAction extends AnAction {
         JScrollPane previewScroll = new JScrollPane(previewPane);
         previewScroll.setBorder(BorderFactory.createEmptyBorder());
         int lineH = editorFont.getSize() + 5;
-        int minPreviewH = lineH * 40;
+        int minPreviewH = lineH * 20;
         FontMetrics previewFm = Toolkit.getDefaultToolkit().getFontMetrics(editorFont);
-        int previewWidth = previewFm.charWidth('m') * (100 + 6) + 16; // 100 code + 6 line-num + margin
+        int previewWidth = previewFm.charWidth('m') * (100 + 6) + 16;
         previewScroll.setPreferredSize(new Dimension(previewWidth, minPreviewH));
         previewScroll.setMinimumSize(new Dimension(200, lineH * 10));
 
@@ -332,12 +353,9 @@ public class CallHierarchyPopupAction extends AnAction {
 
         popupRef[0] = popup;
 
-        // Use a KeyEventDispatcher to intercept left/right arrows before the JScrollPane
-        // or JBList consume them for scrolling/navigation.
         java.awt.KeyEventDispatcher arrowDispatcher = e -> {
             if (e.getID() != KeyEvent.KEY_PRESSED) return false;
             Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-            // Only act when focus is inside our popup's scroll pane
             if (focused == null) return false;
             Component c = focused;
             while (c != null) {
@@ -373,7 +391,6 @@ public class CallHierarchyPopupAction extends AnAction {
         if (idx < 0) return;
         CallSite selected = model.getElementAt(idx);
         if (selected.expanded()) {
-            // Already expanded: jump to first child
             int childIdx = idx + 1;
             if (childIdx < model.size() && model.getElementAt(childIdx).depth() > selected.depth()) {
                 jbList.setSelectedIndex(childIdx);
@@ -389,21 +406,15 @@ public class CallHierarchyPopupAction extends AnAction {
         int idx = jbList.getSelectedIndex();
         if (idx < 0) return;
         CallSite selected = model.getElementAt(idx);
-        PsiNamedElement callerEl = selected.callerElement();
-        if (callerEl == null || selected.expanded()) return;
+        CallHierarchyItem callerItem = selected.callerItem();
+        if (callerItem == null || selected.expanded()) return;
 
-        String callerKey;
-        try {
-            callerKey = elementKey(callerEl);
-        } catch (Exception e) {
-            log("[CallHierarchy] callerElement is invalid, cannot expand");
-            return;
-        }
+        String callerKey = itemKey(callerItem);
         if (expanded.contains(callerKey)) return;
         expanded.add(callerKey);
 
         model.setElementAt(new CallSite(selected.display(), selected.file(), selected.offset(),
-                selected.depth(), callerEl, true), idx);
+                selected.depth(), callerItem, true), idx);
 
         final int insertDepth = selected.depth() + 1;
         final int insertAfterIdx = idx;
@@ -412,7 +423,13 @@ public class CallHierarchyPopupAction extends AnAction {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 try {
-                    List<CallSite> newSites = findCallerSites(callerEl, project, insertDepth);
+                    LspClientService lsp = LspClientService.getInstance(project);
+                    VirtualFile callerFile = LspClientService.fromUri(callerItem.getUri());
+                    if (callerFile == null) return;
+                    LanguageServer server = lsp.getServerFor(callerFile);
+                    if (server == null) return;
+
+                    List<CallSite> newSites = findCallerSitesLsp(server, callerItem, project, insertDepth);
 
                     if (!newSites.isEmpty()) {
                         newSites.sort(Comparator.comparing(CallSite::display));
@@ -425,7 +442,6 @@ public class CallHierarchyPopupAction extends AnAction {
                             jbList.ensureIndexIsVisible(firstChild);
                         });
                     } else {
-                        // No callers found: clear '>' so it won't be retried
                         ApplicationManager.getApplication().invokeLater(() -> {
                             expanded.remove(callerKey);
                             if (insertAfterIdx < model.size()) {
@@ -437,7 +453,8 @@ public class CallHierarchyPopupAction extends AnAction {
                     }
                 } catch (Exception ex) {
                     log("[CallHierarchy] expand error: " + ex);
-                    log(java.util.Arrays.stream(ex.getStackTrace()).map(StackTraceElement::toString).collect(java.util.stream.Collectors.joining("\n  ", "  ", "")));
+                    log(java.util.Arrays.stream(ex.getStackTrace()).map(StackTraceElement::toString)
+                            .collect(java.util.stream.Collectors.joining("\n  ", "  ", "")));
                 }
             }
         }.queue();
@@ -450,7 +467,6 @@ public class CallHierarchyPopupAction extends AnAction {
         CallSite selected = model.getElementAt(idx);
         if (!selected.expanded()) return;
 
-        // Collect all descendants (consecutive items with depth > selected.depth)
         List<CallSite> toRemove = new ArrayList<>();
         int i = idx + 1;
         while (i < model.size() && model.getElementAt(i).depth() > selected.depth()) {
@@ -461,14 +477,13 @@ public class CallHierarchyPopupAction extends AnAction {
             model.removeElementAt(idx + 1 + j);
         }
 
-        // Remove from expanded so the item (and its sub-tree) can be re-expanded later
         removeFromExpanded(expanded, selected);
         for (CallSite site : toRemove) {
             if (site.expanded()) removeFromExpanded(expanded, site);
         }
 
         model.setElementAt(new CallSite(selected.display(), selected.file(), selected.offset(),
-                selected.depth(), selected.callerElement(), false), idx);
+                selected.depth(), selected.callerItem(), false), idx);
     }
 
     private static void collapseOrGoToParent(JBList<CallSite> jbList,
@@ -479,7 +494,6 @@ public class CallHierarchyPopupAction extends AnAction {
         if (selected.expanded()) {
             collapseSelected(jbList, model, expanded);
         } else {
-            // Navigate to nearest ancestor (first item above with lower depth)
             int parentDepth = selected.depth() - 1;
             if (parentDepth < 1) return;
             for (int i = idx - 1; i >= 0; i--) {
@@ -493,10 +507,8 @@ public class CallHierarchyPopupAction extends AnAction {
     }
 
     private static void removeFromExpanded(Set<String> expanded, CallSite site) {
-        if (site.callerElement() != null) {
-            try {
-                expanded.remove(elementKey(site.callerElement()));
-            } catch (Exception ignored) {}
+        if (site.callerItem() != null) {
+            expanded.remove(itemKey(site.callerItem()));
         }
     }
 
@@ -515,47 +527,87 @@ public class CallHierarchyPopupAction extends AnAction {
         new OpenFileDescriptor(project, selected.file(), selected.offset()).navigate(true);
     }
 
-    private static String buildDisplay(Project project, @Nullable PsiNamedElement callerEl, PsiElement refEl) {
-        String label = callerLabel(callerEl, refEl);
-        var doc = PsiDocumentManager.getInstance(project).getDocument(refEl.getContainingFile());
-        int line = doc != null ? doc.getLineNumber(refEl.getTextOffset()) + 1 : -1;
-        return line > 0 ? label + ":" + line : label;
+    private static String itemKey(CallHierarchyItem item) {
+        return item.getUri() + ":" + item.getRange().getStart().getLine()
+                + ":" + item.getRange().getStart().getCharacter();
     }
 
-    private static String elementKey(PsiNamedElement element) {
-        return ReadAction.compute(() ->
-                element.getContainingFile().getVirtualFile().getPath() + ":" + element.getTextOffset());
-    }
-
-    private static String callerLabel(@Nullable PsiNamedElement caller, PsiElement fallback) {
-        if (caller instanceof PsiMethod method) {
-            PsiClass cls = method.getContainingClass();
-            String prefix = namedClassName(cls) + ".";
-            return prefix + method.getName();
-        } else if (caller != null && caller.getName() != null) {
-            return caller.getName();
-        } else {
-            return fallback.getContainingFile().getName();
+    private static String buildItemLabel(CallHierarchyItem item) {
+        String detail = item.getDetail();
+        if (detail != null && !detail.isBlank()) {
+            return detail + "/" + item.getName();
         }
+        return item.getName();
     }
 
-    private static String namedClassName(@Nullable PsiClass cls) {
-        while (cls != null && cls.getName() == null) {
-            cls = PsiTreeUtil.getParentOfType(cls, PsiClass.class);
+    private static String buildLspDisplay(CallHierarchyItem item, @Nullable Range callRange) {
+        String label = buildItemLabel(item);
+        int line = callRange != null
+                ? callRange.getStart().getLine() + 1
+                : item.getSelectionRange().getStart().getLine() + 1;
+        return label + ":" + line;
+    }
+
+    private static List<CallSite> findCallerSitesLsp(LanguageServer server, CallHierarchyItem item,
+                                                      Project project, int depth) {
+        CallHierarchyIncomingCallsParams params = new CallHierarchyIncomingCallsParams();
+        params.setItem(item);
+        List<CallHierarchyIncomingCall> calls;
+        try {
+            calls = server.getTextDocumentService()
+                    .callHierarchyIncomingCalls(params)
+                    .get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log("[CallHierarchy] incomingCalls error: " + e);
+            return List.of();
         }
-        return cls != null ? cls.getName() : "";
+        if (calls == null) return List.of();
+
+        List<CallSite> sites = new ArrayList<>();
+        for (CallHierarchyIncomingCall call : calls) {
+            CallHierarchyItem from = call.getFrom();
+            VirtualFile callerFile = LspClientService.fromUri(from.getUri());
+            if (callerFile == null) continue;
+
+            for (Range fromRange : call.getFromRanges()) {
+                int offset = ReadAction.compute(() -> {
+                    Document doc = FileDocumentManager.getInstance().getDocument(callerFile);
+                    if (doc == null) return 0;
+                    return LspClientService.positionToOffset(doc, fromRange.getStart());
+                });
+                boolean hasChildren = hasLspCallers(server, from);
+                String display = buildLspDisplay(from, fromRange);
+                sites.add(new CallSite(display, callerFile, offset, depth,
+                        hasChildren ? from : null, false));
+            }
+        }
+        sites.sort(Comparator.comparingInt((CallSite s) -> isPlainTextFile(s.file()) ? 1 : 0)
+                .thenComparing(CallSite::display));
+        return sites;
+    }
+
+    private static boolean hasLspCallers(LanguageServer server, CallHierarchyItem item) {
+        try {
+            CallHierarchyIncomingCallsParams params = new CallHierarchyIncomingCallsParams();
+            params.setItem(item);
+            List<CallHierarchyIncomingCall> calls = server.getTextDocumentService()
+                    .callHierarchyIncomingCalls(params)
+                    .get(10, java.util.concurrent.TimeUnit.SECONDS);
+            return calls != null && !calls.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static void updatePreview(JTextPane previewPane, JLabel headerLabel,
                                       @Nullable CallSite site, Font editorFont, Project project) {
         if (site == null) { headerLabel.setText(" "); previewPane.setText(""); return; }
-        com.intellij.openapi.editor.Document doc = ReadAction.compute(() ->
+        Document doc = ReadAction.compute(() ->
                 FileDocumentManager.getInstance().getDocument(site.file()));
         if (doc == null) { previewPane.setText("(no preview)"); return; }
         int targetLine = ReadAction.compute(() -> doc.getLineNumber(site.offset()));
         int startLine = Math.max(0, targetLine - 20);
         int endLine = Math.min(doc.getLineCount() - 1, targetLine + 20);
-        // Ensure at least 40 lines shown by extending whichever side has room
         if (endLine - startLine < 39) {
             if (startLine == 0) endLine = Math.min(doc.getLineCount() - 1, 39);
             else startLine = Math.max(0, endLine - 39);
@@ -578,44 +630,32 @@ public class CallHierarchyPopupAction extends AnAction {
         Color caretBg = rawCaretBg != null ? rawCaretBg : defaultBg;
         Color lineNumFg = blend(defaultFg, defaultBg, 0.55f);
 
-        // Build header: yellow filename, relative path, syntax-highlighted function signature, then '...'
+        // Build header: filename, relative path, function signature from LSP item range
         String funcDef = ReadAction.compute(() -> {
-            com.intellij.psi.PsiFile pf = PsiManager.getInstance(project).findFile(site.file());
-            if (pf == null) return "";
-            PsiElement el = pf.findElementAt(site.offset());
-            PsiNamedElement func = findEnclosingFunction(el);
-            if (func == null) return "";
-            // Java: use PSI range from function start up to (not including) the body opener
-            if (func instanceof PsiMethod method && method.getBody() != null) {
-                return doc.getText(new TextRange(func.getTextOffset(),
-                        method.getBody().getTextOffset())).stripTrailing();
-            }
-            // Fallback: read lines until one ends with ':' or '{' (ignoring comments), cap at 8
-            int funcLine = doc.getLineNumber(func.getTextOffset());
+            CallHierarchyItem item = site.callerItem();
+            if (item == null) return "";
+            int funcStartLine = item.getRange().getStart().getLine();
             StringBuilder sb = new StringBuilder();
-            for (int i = funcLine; i < doc.getLineCount(); i++) {
+            for (int i = funcStartLine; i < Math.min(doc.getLineCount(), funcStartLine + 9); i++) {
                 String line = doc.getText(new TextRange(doc.getLineStartOffset(i), doc.getLineEndOffset(i)));
-                if (i > funcLine) sb.append("\n");
+                if (i > funcStartLine) sb.append("\n");
                 sb.append(line);
-                // Strip inline comments before checking the terminator character
                 String check = line;
-                int hash = check.indexOf('#');
-                if (hash >= 0) check = check.substring(0, hash);
                 int slash = check.indexOf("//");
                 if (slash >= 0) check = check.substring(0, slash);
+                int hash = check.indexOf('#');
+                if (hash >= 0) check = check.substring(0, hash);
                 check = check.stripTrailing();
                 if (check.endsWith("{") || check.endsWith(":")) break;
             }
             return sb.toString().stripTrailing();
         });
+
         String basePath = project.getBasePath();
         String filePath = site.file().getPath();
         String relativePath = (basePath != null && filePath.startsWith(basePath))
                 ? filePath.substring(basePath.length()).replaceFirst("^/", "")
                 : filePath;
-        // Normalize indentation: strip common leading whitespace, then
-        // prepend 2 spaces to the def line and 4 spaces to parameter lines.
-        // Stripping only the common prefix preserves relative alignment between lines.
         String[] defLines = funcDef.split("\n", -1);
         int minIndent = Integer.MAX_VALUE;
         for (String line : defLines) {
@@ -631,7 +671,7 @@ public class CallHierarchyPopupAction extends AnAction {
         for (int i = 0; i < defLines.length; i++) {
             if (i > 0) normalizedDef.append("\n");
             String line = defLines[i].length() >= strip ? defLines[i].substring(strip) : defLines[i];
-            normalizedDef.append(i == 0 ? "  " : "   ").append(line);
+            normalizedDef.append(i == 0 ? "  " : "   ").append(line);
         }
         funcDef = normalizedDef.toString();
 
@@ -658,11 +698,9 @@ public class CallHierarchyPopupAction extends AnAction {
 
             if (isTarget) targetDocOffset = styledDoc.getLength();
 
-            // Line number prefix
             appendStr(styledDoc, String.format("%4d  ", absLine + 1), editorFont,
                     lineNumFg, bg, false, false);
 
-            // Line content with syntax highlighting (fg unchanged on target line — only bg differs)
             int lineEnd = snippetOffset + lineText.length();
             int cursor = snippetOffset;
             for (int[] t : tokens) {
@@ -687,10 +725,8 @@ public class CallHierarchyPopupAction extends AnAction {
             snippetOffset += lineText.length() + 1;
         }
 
-        // Place caret at top to avoid auto-scroll fighting with our centering below
         previewPane.setCaretPosition(0);
 
-        // Center the target line in the viewport (deferred so layout is complete)
         if (targetDocOffset >= 0) {
             final int tOff = targetDocOffset;
             SwingUtilities.invokeLater(() -> {
@@ -784,104 +820,6 @@ public class CallHierarchyPopupAction extends AnAction {
         );
     }
 
-    private static List<CallSite> findCallerSites(PsiNamedElement element, Project project, int depth) {
-        List<CallSite> sites = new ArrayList<>();
-        for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
-            if (!ReadAction.compute(() -> isCallReference(ref.getElement()))) continue;
-            PsiNamedElement callerEl = ReadAction.compute(() -> findEnclosingFunction(ref.getElement()));
-            boolean hasChildren = callerEl != null && hasCallers(callerEl, project);
-            CallSite site = ReadAction.compute(() -> {
-                PsiElement el = ref.getElement();
-                String display = buildDisplay(project, callerEl, el);
-                return new CallSite(display, el.getContainingFile().getVirtualFile(),
-                        el.getTextOffset(), depth, hasChildren ? callerEl : null, false);
-            });
-            sites.add(site);
-        }
-        sites.sort(Comparator.comparingInt((CallSite s) -> isPlainTextFile(s.file()) ? 1 : 0)
-                .thenComparing(CallSite::display));
-        return sites;
-    }
-
-    private static boolean hasCallers(PsiNamedElement element, Project project) {
-        for (PsiReference ref : ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()) {
-            if (ReadAction.compute(() -> isCallReference(ref.getElement()))) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Returns true if refElement is a function/method call reference.
-     * Java/Kotlin: parent is a PsiCallExpression or has "Call" in its class name.
-     * Clojure/Lisp: refElement is the first named child of a list form (function position).
-     */
-    private static boolean isCallReference(PsiElement refElement) {
-        PsiElement parent = refElement.getParent();
-        if (parent instanceof PsiCallExpression) return true;
-        String parentSimple = parent.getClass().getSimpleName();
-        if (parentSimple.contains("Call")) return true;
-        // Clojure: a symbol in function position is the first named child of a list form
-        if (parentSimple.contains("List") || parentSimple.contains("Form")) {
-            for (PsiElement child : parent.getChildren()) {
-                if (child instanceof PsiNamedElement named && named.getName() != null) {
-                    return child.getTextOffset() == refElement.getTextOffset();
-                }
-            }
-        }
-        return false;
-    }
-
-    /** Finds the nearest enclosing function/method element regardless of language. */
-    private static @Nullable PsiNamedElement findEnclosingFunction(@Nullable PsiElement el) {
-        PsiElement current = el;
-        while (current != null && !(current instanceof PsiFile)) {
-            String simpleName = current.getClass().getSimpleName();
-            if (current instanceof PsiNamedElement named && named.getName() != null && isFunctionLike(current)) {
-                log("[CallHierarchy] findEnclosingFunction matched: " + simpleName + " name=" + named.getName());
-                return named;
-            }
-            // Clojure/Cursive: detect (defn name [...] ...) list forms
-            PsiNamedElement clojureFunc = detectClojureDefn(current);
-            if (clojureFunc != null) {
-                log("[CallHierarchy] findEnclosingFunction matched Clojure defn: " + clojureFunc.getName());
-                return clojureFunc;
-            }
-            log("[CallHierarchy] findEnclosingFunction skip: " + simpleName
-                    + (current instanceof PsiNamedElement n2 ? " name=" + n2.getName() : ""));
-            current = current.getParent();
-        }
-        return null;
-    }
-
-    /**
-     * Detects Clojure (defn name ...) / (defmacro name ...) / (defmulti name ...) list forms.
-     * Inspects the first two named children of any list-like element: if the first is a
-     * function-defining form (defn, defmacro, etc.) the second is the function name.
-     * Plain (def ...) variable definitions are excluded.
-     */
-    private static @Nullable PsiNamedElement detectClojureDefn(PsiElement el) {
-        String simpleName = el.getClass().getSimpleName();
-        if (!simpleName.contains("List") && !simpleName.contains("Form")) return null;
-        PsiElement[] children = el.getChildren();
-        PsiNamedElement first = null, second = null;
-        for (PsiElement child : children) {
-            if (child instanceof PsiNamedElement named && named.getName() != null) {
-                if (first == null) first = named;
-                else { second = named; break; }
-            }
-        }
-        if (first == null || second == null) return null;
-        String firstName = first.getName();
-        if (!isClojureFunctionDef(firstName)) return null;
-        return second;
-    }
-
-    /** Matches Clojure function-defining forms: defn, defn-, defmacro, defmulti, defmethod. */
-    private static boolean isClojureFunctionDef(String word) {
-        return word != null && (word.startsWith("defn") || word.equals("defmacro")
-                || word.equals("defmulti") || word.equals("defmethod"));
-    }
-
     private static final Set<String> PLAIN_TEXT_EXTENSIONS = Set.of(
             "md", "markdown", "txt", "adoc", "rst", "org");
 
@@ -890,20 +828,8 @@ public class CallHierarchyPopupAction extends AnAction {
         return ext != null && PLAIN_TEXT_EXTENSIONS.contains(ext.toLowerCase());
     }
 
-    /** True for Java PsiMethod, Python PyFunction, Kotlin KtNamedFunction, etc. */
-    private static boolean isFunctionLike(PsiElement el) {
-        if (el instanceof PsiMethod) return true;
-        String name = el.getClass().getSimpleName();
-        return name.contains("Function") || name.contains("Method");
-    }
-
-    private static final Path LOG_FILE = Paths.get(System.getProperty("user.home"), ".callhierarchypopup.log");
-
     private static void log(String msg) {
-        if (!Files.exists(LOG_FILE)) return;
-        try {
-            Files.writeString(LOG_FILE, msg + "\n", StandardOpenOption.APPEND);
-        } catch (IOException ignored) {}
+        SimpleLog.log(msg);
     }
 
     private static void applyFontRecursively(Component c, Font font) {
