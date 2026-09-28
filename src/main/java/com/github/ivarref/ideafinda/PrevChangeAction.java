@@ -23,6 +23,6 @@ public class PrevChangeAction extends AnAction {
     }
 
     public final @NotNull ActionUpdateThread getActionUpdateThread() {
-        return super.getActionUpdateThread();
+        return ActionUpdateThread.EDT;
     }
 }

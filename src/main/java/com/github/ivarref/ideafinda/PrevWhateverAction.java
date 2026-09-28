@@ -30,7 +30,7 @@ public class PrevWhateverAction extends AnAction {
     }
 
     public final @NotNull ActionUpdateThread getActionUpdateThread() {
-        return super.getActionUpdateThread();
+        return ActionUpdateThread.EDT;
     }
 
     public static void run(@NotNull AnActionEvent e, NextWhateverAction.NextAction action) {

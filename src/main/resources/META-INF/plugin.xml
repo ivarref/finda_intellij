@@ -61,6 +61,13 @@
                 description="Go to previous change">
         </action>
 
+        <action
+                class="com.github.ivarref.ideafinda.SplitAndMove"
+                id="com.github.ivarref.ideafinda.SplitAndMoveAction"
+                text="Split and move tab (max two splits)"
+                description="Split and move tab (max two splits)">
+        </action>
+
         <action id="com.github.ivarref.ideafinda.NextWhateverAction"
                 class="com.github.ivarref.ideafinda.NextWhateverAction" text="Next Whatever Action"
                 description="Next whatever action">
