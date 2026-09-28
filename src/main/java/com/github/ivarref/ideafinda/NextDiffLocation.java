@@ -59,15 +59,16 @@ public class NextDiffLocation {
             logger.info("Tracker is null, moving to next file");
             gotoNextFile(e, project);
             return;
-        } else if (!tracker.isValid()) {
-            logger.info("Tracker is not valid");
+        } else if (!tracker.isValid()) { // this may mean that the file has no changes
+            logger.info("Tracker is not valid for file: {}", e.getData(CommonDataKeys.VIRTUAL_FILE).getName());
+            gotoNextFile(e, project);
             return;
         } else if (!tracker.isAvailableAt(editor)) {
-            logger.info("Tracker is not available");
+            logger.info("Tracker is not available for file: {}", e.getData(CommonDataKeys.VIRTUAL_FILE).getName());
             return;
         } else {
             VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-            logger.info("Tracker is OK for file: " + file.getName());
+            logger.info("Tracker is OK for file: {}", file.getName());
             int line = editor.getCaretModel().getLogicalPosition().line;
             Range next = tracker.getNextRange(line);
             if (next != null) {
@@ -77,11 +78,11 @@ public class NextDiffLocation {
                 if (-1 == column) {
                     column = 0;
                 }
-                logger.info("Moving to line: " + visualLine + " and column: " + column + " for file: " + file.getName());
+                logger.info("Moving to line: {} and column: {} for file: {}", visualLine, column, file.getName());
                 OpenFileDescriptor descriptor = new OpenFileDescriptor(project, file, visualLine, column);
                 fem.openTextEditor(descriptor, true);
             } else {
-                logger.info("Tracker getNextRange is null for file: " + file.getName() + ", moving to next file");
+                logger.info("Tracker getNextRange is null for file: {}, moving to next file", file.getName());
                 gotoNextFile(e, project);
             }
         }
@@ -99,6 +100,9 @@ public class NextDiffLocation {
         VirtualFile virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE);
         List<@Nullable VirtualFile> lst = changes.stream().map(Change::getVirtualFile).toList();
         List<VirtualFile> files = new ArrayList<>(lst);
+        if (!files.contains(virtualFile)) {
+            files.add(virtualFile);
+        }
         Comparator<VirtualFile> comparing = Comparator.comparing(x -> x.getName().toLowerCase(Locale.ROOT));
         files.sort(comparing);
         boolean isLast = files.getLast().equals(virtualFile);

@@ -33,14 +33,14 @@ public class PrevDiffLocation {
         FileEditorManager fem = FileEditorManager.getInstance(project);
         int column = EditorActionUtil.findFirstNonSpaceColumnOnTheLine(editor, startLine);
         if (-1 == column) {
-            logger.info("Line " + startLine + " for file: " + file.getName() + " is empty");
-            logger.info("Stop Line is: " + stopLine);
+            logger.info("Line {} for file: {} is empty", startLine, file.getName());
+            logger.info("Stop Line is: {}", stopLine);
             for (int newLine = startLine + 1; newLine <= stopLine; newLine++) {
                 int column2 = EditorActionUtil.findFirstNonSpaceColumnOnTheLine(editor, newLine);
                 if (-1 == column2) {
                     continue;
                 } else {
-                    logger.info("Returning line " + newLine + " for file: " + file.getName());
+                    logger.info("Returning line {} for file: {}", newLine, file.getName());
                     return newLine;
                 }
             }
@@ -61,14 +61,15 @@ public class PrevDiffLocation {
             gotoNextFile(e, project);
             return;
         } else if (!tracker.isValid()) {
-            logger.info("Tracker is not valid");
+            logger.info("Tracker is not valid for file: {}", e.getData(CommonDataKeys.VIRTUAL_FILE).getName());
+            gotoNextFile(e, project);
             return;
         } else if (!tracker.isAvailableAt(editor)) {
-            logger.info("Tracker is not available");
+            logger.info("Tracker is not available for file: {}", e.getData(CommonDataKeys.VIRTUAL_FILE).getName());
             return;
         } else {
             VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-            logger.info("Tracker is OK for file: " + file.getName());
+            logger.info("Tracker is OK for file: {}", file.getName());
             int line = editor.getCaretModel().getLogicalPosition().line;
             Range next = tracker.getNextRange(line);
             if (next != null) {
@@ -100,6 +101,9 @@ public class PrevDiffLocation {
         VirtualFile virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE);
         List<@Nullable VirtualFile> lst = changes.stream().map(Change::getVirtualFile).toList();
         List<VirtualFile> files = new ArrayList<>(lst);
+        if (!files.contains(virtualFile)) {
+            files.add(virtualFile);
+        }
         Comparator<VirtualFile> comparing = Comparator.comparing(x -> x.getName().toLowerCase(Locale.ROOT));
         files.sort(comparing);
         boolean isFirst = files.getFirst().equals(virtualFile);
@@ -111,15 +115,15 @@ public class PrevDiffLocation {
         }
 
         VirtualFile nextFile = files.get(nextFileIdx);
-        logger.info("Next file is: " + nextFile.getName());
+        logger.info("Next file is: {}", nextFile.getName());
         Editor editor = getEditor(project, nextFile);
         LineStatusTracker<?> tracker =
                 LineStatusTrackerManager.getInstance(project).getLineStatusTracker(editor.getDocument());
 
         if (null == tracker) { // It's a totally new file (no proper tracker)
-            logger.info("Tracker is null for nextfile: " + nextFile.getName());
+            logger.info("Tracker is null for nextfile: {}", nextFile.getName());
             int line = editor.getCaretModel().getLogicalPosition().line;
-            logger.info("Moving to line: " + line + " for nextfile: " + nextFile.getName());
+            logger.info("Moving to line: {} for nextfile: {}", line, nextFile.getName());
             FileEditorManager fem = FileEditorManager.getInstance(project);
             OpenFileDescriptor descriptor = new OpenFileDescriptor(project, nextFile, line, 1);
             fem.openTextEditor(descriptor, true);
@@ -135,14 +139,14 @@ public class PrevDiffLocation {
         }
 
         Range next2 = tracker.getNextRange(0);
-        if (next2 != null) {
+        if (null != next2) {
             FileEditorManager fem = FileEditorManager.getInstance(project);
             int visualLine = next2.getLine1();
             int column = EditorActionUtil.findFirstNonSpaceColumnOnTheLine(editor, visualLine);
             if (-1 == column) {
                 column = 0;
             }
-            logger.info("Moving to line for nextfile: " + visualLine + " and column: " + column);
+            logger.info("Moving to line for nextfile: {} and column: {}", visualLine, column);
             OpenFileDescriptor descriptor = new OpenFileDescriptor(project, nextFile, visualLine, column);
             fem.openTextEditor(descriptor, true);
             return;
