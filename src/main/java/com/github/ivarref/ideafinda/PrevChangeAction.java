@@ -9,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 // this is the initial code executed by `gpc`
 public class PrevChangeAction extends AnAction {
 
+
     @Override
     public final void update(@NotNull AnActionEvent event) {
         final Project project = event.getProject();
