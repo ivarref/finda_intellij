@@ -1,14 +1,13 @@
 package com.github.ivarref.ideafinda;
 
-import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.Messages;
 import org.jetbrains.annotations.NotNull;
 
-public class PreviousWhateverAction extends AnAction {
+// this is the initial code executed by `gpc`
+public class PrevChangeAction extends AnAction {
 
     @Override
     public final void update(@NotNull AnActionEvent event) {
@@ -18,18 +17,11 @@ public class PreviousWhateverAction extends AnAction {
 
     @Override
     public final void actionPerformed(@NotNull AnActionEvent e) {
-        if (NextWhateverAction.NextAction.ERROR == NextWhateverAction.currentAction) {
-            NextWhateverAction.executeActionId("GotoPreviousError", e);
-        } else if (NextWhateverAction.NextAction.CHANGE == NextWhateverAction.currentAction) {
-            NextWhateverAction.executeActionId("VcsShowPrevChangeMarker", e);
-        } else {
-            Messages.showInfoMessage("::" + NextWhateverAction.currentAction,
-                    "Previous action is ...");
-        }
+//        Messages.showInfoMessage("Next change", "next change");
+        PrevWhateverAction.run(e, NextWhateverAction.NextAction.CHANGE);
     }
 
     public final @NotNull ActionUpdateThread getActionUpdateThread() {
         return super.getActionUpdateThread();
     }
-
 }

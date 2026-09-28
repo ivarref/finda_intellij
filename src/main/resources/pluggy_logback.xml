@@ -1,0 +1,15 @@
+<configuration debug="true">
+
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>/Users/ire/simple.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%logger{35}.%M\(%line\) - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="FILE" />
+    </root>
+
+</configuration>

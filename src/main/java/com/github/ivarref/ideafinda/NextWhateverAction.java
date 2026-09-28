@@ -8,6 +8,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import org.jetbrains.annotations.NotNull;
 
+import static com.github.ivarref.ideafinda.DebugLogger.info;
+
 public class NextWhateverAction extends AnAction {
 
     public enum NextAction {
@@ -29,17 +31,21 @@ public class NextWhateverAction extends AnAction {
 
     @Override
     public final void actionPerformed(@NotNull AnActionEvent e) {
+        info("");
         if (NextAction.ERROR == currentAction) {
             executeActionId("GotoNextError", e);
         } else if (NextAction.CHANGE == currentAction) {
-            executeActionId("VcsShowNextChangeMarker", e);
+            info("Moving to next diff location");
+            NextDiffLocation.runAction(e);
         } else {
             Messages.showInfoMessage("::" + currentAction, "Next action is ...");
         }
     }
 
     public final @NotNull ActionUpdateThread getActionUpdateThread() {
-        return super.getActionUpdateThread();
+        return ActionUpdateThread.EDT;
+        // dum di dam
+        // kebbelife
     }
 
     public static void run(@NotNull AnActionEvent e, NextAction action) {

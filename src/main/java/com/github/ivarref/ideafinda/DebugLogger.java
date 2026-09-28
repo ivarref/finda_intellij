@@ -4,6 +4,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class DebugLogger {
 
@@ -13,7 +15,11 @@ public class DebugLogger {
         String fileName = findaDir + "/integrations/finda_intellij/plugin.log";
         try (FileWriter fw = new FileWriter(fileName, StandardCharsets.UTF_8, true);
              PrintWriter pw = new PrintWriter(fw)) {
-            pw.println(msg);
+            List<StackWalker.StackFrame> stack = StackWalker.getInstance().walk(stckframe ->
+                    stckframe.limit(10).collect(Collectors.toList()));
+            StackWalker.StackFrame sf = stack.get(1);
+            String msg2 = sf.getClassName() + " " + msg;
+            pw.println(msg2);
         } catch (IOException e) {
             e.printStackTrace();
         }

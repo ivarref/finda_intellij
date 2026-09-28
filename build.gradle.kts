@@ -22,7 +22,11 @@ dependencies {
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
 
         bundledPlugin("com.intellij.java")
+        bundledModule("intellij.platform.vcs.impl")
     }
+    implementation("org.slf4j:slf4j-api:2.0.20")
+    implementation("ch.qos.logback:logback-core:1.6.4")
+    implementation("ch.qos.logback:logback-classic:1.6.4")
 }
 
 intellijPlatform {

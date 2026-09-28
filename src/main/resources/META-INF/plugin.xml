@@ -19,13 +19,14 @@
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
+    <depends>com.intellij.modules.vcs</depends>
 <!--    <depends>com.intellij.modules.lsp</depends>-->
 
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
-    <extensions defaultExtensionNs="com.intellij">
-        <projectService serviceImplementation="com.github.ivarref.ideafinda.LspClientService"/>
-    </extensions>
+<!--    <extensions defaultExtensionNs="com.intellij">-->
+<!--        <projectService serviceImplementation="com.github.ivarref.ideafinda.LspClientService"/>-->
+<!--    </extensions>-->
     <actions>
         <group id="com.github.ivarref.ChooseInitialNextAction"
                text="Devil Mode - Choose Initial Next Action"
@@ -47,75 +48,41 @@
                     description="Go to next change">
             </action>
         </group>
-        <group id="com.github.ivarref.ChooseWindowAction"
-               text="Devil Mode - Choose Window Action"
-               popup="true">
-            <add-to-group
-                    group-id="ToolsMenu"
-                    anchor="after"
-                    relative-to-action="com.github.ivarref.ideafinda.PopupDialogAction"/>
-            <action
-                    class="com.github.ivarref.ideafinda.CloseTabAction"
-                    id="org.intellij.sdk.action.GroupPopDialogAction3"
-                    text="&amp;close"
-                    description="Close tab">
-            </action>
-            <action
-                    class="com.github.ivarref.ideafinda.NextChangeAction"
-                    id="org.intellij.sdk.action.GroupPopDialogAction4"
-                    text="&amp;split"
-                    description="Split / move to next group">
-            </action>
-        </group>
-        <action id="com.github.ivarref.ideafinda.PopupDialogAction"
-                class="com.github.ivarref.ideafinda.PopupDialogAction"
-                text="Ivar Dialog Action"
-                description="Ivar dialog action description">
-            <add-to-group group-id="ToolsMenu" anchor="first"/>
+        <action
+                class="com.github.ivarref.ideafinda.NextChangeAction"
+                id="com.github.ivarref.ideafinda.NextChangeAction"
+                description="Go to next change">
         </action>
-        <action id="com.github.ivarref.ideafinda.InsertCommaAction"
-                class="com.github.ivarref.ideafinda.InsertCommaAction"
-                text="Insert Comma at Caret"/>
-        <action id="com.github.ivarref.ideafinda.InsertCommaSpaceAction"
-                class="com.github.ivarref.ideafinda.InsertCommaSpaceAction"
-                text="Insert Comma+Space Action">
-            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="SPACE"/>
+        <action
+                class="com.github.ivarref.ideafinda.PrevChangeAction"
+                id="com.github.ivarref.ideafinda.PrevChangeAction"
+                description="Go to previous change">
         </action>
-        <action id="com.github.ivarref.ideafinda.InsertCommaEnterAction"
-                class="com.github.ivarref.ideafinda.InsertCommaEnterAction"
-                text="Insert Comma+Enter Action">
-            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="ENTER"/>
-        </action>
-        <action id="com.github.ivarref.ideafinda.ChooseInitialNextAction"
-                class="com.github.ivarref.ideafinda.ChooseInitialNextAction"
-                text="Choose Initial Next Action">
-            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="N"/>
-        </action>
+
         <action id="com.github.ivarref.ideafinda.NextWhateverAction"
                 class="com.github.ivarref.ideafinda.NextWhateverAction" text="Next Whatever Action"
                 description="Next whatever action">
-            <keyboard-shortcut keymap="$default" first-keystroke="meta N"/>
         </action>
-        <action id="com.github.ivarref.ideafinda.PreviousWhateverAction"
-                class="com.github.ivarref.ideafinda.PreviousWhateverAction"
+        <action id="com.github.ivarref.ideafinda.PrevWhateverAction"
+                class="com.github.ivarref.ideafinda.PrevWhateverAction"
                 text="Previous Whatever Action"
                 description="Previous whatever action">
-            <keyboard-shortcut keymap="$default" first-keystroke="meta P"/>
+<!--            <keyboard-shortcut keymap="$default" first-keystroke="meta P"/>-->
         </action>
-        <action id="com.github.ivarref.ideafinda.WindowChooseAction"
-                class="com.github.ivarref.ideafinda.WindowChooseAction" text="Choose Window Action">
-            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="W"/>
-        </action>
-        <action id="com.github.ivarref.ideafinda.CallHierarchyPopupAction"
-                class="com.github.ivarref.ideafinda.CallHierarchyPopupAction"
-                text="Call Hierarchy Popup">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="H"/>
-        </action>
+<!--        <action id="com.github.ivarref.ideafinda.WindowChooseAction"-->
+<!--                class="com.github.ivarref.ideafinda.WindowChooseAction" text="Choose Window Action">-->
+<!--            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="W"/>-->
+<!--        </action>-->
+<!--        <action id="com.github.ivarref.ideafinda.CallHierarchyPopupAction"-->
+<!--                class="com.github.ivarref.ideafinda.CallHierarchyPopupAction"-->
+<!--                text="Call Hierarchy Popup">-->
+<!--            <add-to-group group-id="ToolsMenu" anchor="last"/>-->
+<!--            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="H"/>-->
+<!--        </action>-->
     </actions>
-    <projectListeners>
-        <listener
-                class="com.github.ivarref.ideafinda.MyFileEditorManagerListener"
-                topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
-    </projectListeners>
+<!--    <projectListeners>-->
+<!--        <listener-->
+<!--                class="com.github.ivarref.ideafinda.MyFileEditorManagerListener"-->
+<!--                topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>-->
+<!--    </projectListeners>-->
 </idea-plugin>
