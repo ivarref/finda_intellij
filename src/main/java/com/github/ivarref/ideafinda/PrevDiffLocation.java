@@ -18,10 +18,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 
 import static com.github.ivarref.ideafinda.NextDiffLocation.getEditor;
 
@@ -138,10 +135,11 @@ public class PrevDiffLocation {
             return;
         }
 
-        Range next2 = tracker.getPrevRange(0);
-        if (null != next2) {
+        // Go to the bottom entry of this file ...
+        Optional<Integer> maxLine1 = tracker.getRanges().stream().map(Range::getLine1).max(Comparator.comparingInt(x -> x));
+        if (maxLine1.isPresent()) {
             FileEditorManager fem = FileEditorManager.getInstance(project);
-            int visualLine = next2.getLine1();
+            int visualLine = maxLine1.get().intValue();
             int column = EditorActionUtil.findFirstNonSpaceColumnOnTheLine(editor, visualLine);
             if (-1 == column) {
                 column = 0;
@@ -149,9 +147,8 @@ public class PrevDiffLocation {
             logger.info("Moving to line for prevfile: {} and column: {}", visualLine, column);
             OpenFileDescriptor descriptor = new OpenFileDescriptor(project, prevFile, visualLine, column);
             fem.openTextEditor(descriptor, true);
-            return;
         } else {
-            logger.info("Range next2 is null, doing nothing");
+            logger.info("Could not find maxLine1, doing nothing");
             return;
         }
     }
