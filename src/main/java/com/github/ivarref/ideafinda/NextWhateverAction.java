@@ -7,10 +7,11 @@ import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import org.jetbrains.annotations.NotNull;
-
-import static com.github.ivarref.ideafinda.DebugLogger.info;
+import org.slf4j.Logger;
 
 public class NextWhateverAction extends AnAction {
+
+    private static final Logger logger = InitSLF4J.getLogger(PrevWhateverAction.class);
 
     public enum NextAction {
         CHANGE, ERROR
@@ -31,11 +32,11 @@ public class NextWhateverAction extends AnAction {
 
     @Override
     public final void actionPerformed(@NotNull AnActionEvent e) {
-        info("");
+        logger.info("");
         if (NextAction.ERROR == currentAction) {
             executeActionId("GotoNextError", e);
         } else if (NextAction.CHANGE == currentAction) {
-            info("Moving to next diff location");
+            logger.info("Moving to next diff location");
             NextDiffLocation.runAction(e);
         } else {
             Messages.showInfoMessage("::" + currentAction, "Next action is ...");
@@ -44,8 +45,6 @@ public class NextWhateverAction extends AnAction {
 
     public final @NotNull ActionUpdateThread getActionUpdateThread() {
         return ActionUpdateThread.EDT;
-        // dum di dam
-        // kebbelife
     }
 
     public static void run(@NotNull AnActionEvent e, NextAction action) {

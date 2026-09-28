@@ -16,29 +16,31 @@ import com.intellij.openapi.vcs.impl.LineStatusTrackerManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-import static com.github.ivarref.ideafinda.DebugLogger.info;
 import static com.github.ivarref.ideafinda.NextDiffLocation.getEditor;
 
 public class PrevDiffLocation {
+
+    private static final Logger logger = InitSLF4J.getLogger(PrevDiffLocation.class);
 
     public static int getNonEmptyLine(Project project, VirtualFile file, Editor editor, int startLine, int stopLine) {
         FileEditorManager fem = FileEditorManager.getInstance(project);
         int column = EditorActionUtil.findFirstNonSpaceColumnOnTheLine(editor, startLine);
         if (-1 == column) {
-            info("Line " + startLine + " for file: " + file.getName() + " is empty");
-            info("Stop Line is: " + stopLine);
+            logger.info("Line " + startLine + " for file: " + file.getName() + " is empty");
+            logger.info("Stop Line is: " + stopLine);
             for (int newLine = startLine + 1; newLine <= stopLine; newLine++) {
                 int column2 = EditorActionUtil.findFirstNonSpaceColumnOnTheLine(editor, newLine);
                 if (-1 == column2) {
                     continue;
                 } else {
-                    info("Returning line " + newLine + " for file: " + file.getName());
+                    logger.info("Returning line " + newLine + " for file: " + file.getName());
                     return newLine;
                 }
             }
@@ -55,18 +57,18 @@ public class PrevDiffLocation {
         LineStatusTracker<?> tracker =
                 LineStatusTrackerManager.getInstance(project).getLineStatusTracker(editor.getDocument());
         if (null == tracker) { // the entire file is new
-            info("Tracker is null, moving to next file");
+            logger.info("Tracker is null, moving to next file");
             gotoNextFile(e, project);
             return;
         } else if (!tracker.isValid()) {
-            info("Tracker is not valid");
+            logger.info("Tracker is not valid");
             return;
         } else if (!tracker.isAvailableAt(editor)) {
-            info("Tracker is not available");
+            logger.info("Tracker is not available");
             return;
         } else {
             VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-            info("Tracker is OK for file: " + file.getName());
+            logger.info("Tracker is OK for file: " + file.getName());
             int line = editor.getCaretModel().getLogicalPosition().line;
             Range next = tracker.getNextRange(line);
             if (next != null) {
@@ -76,11 +78,11 @@ public class PrevDiffLocation {
                 if (-1 == column) {
                     column = 0;
                 }
-                info("Moving to line: " + visualLine + " and column: " + column + " for file: " + file.getName());
+                logger.info("Moving to line: " + visualLine + " and column: " + column + " for file: " + file.getName());
                 OpenFileDescriptor descriptor = new OpenFileDescriptor(project, file, visualLine, column);
                 fem.openTextEditor(descriptor, true);
             } else {
-                info("Tracker getNextRange is null for file: " + file.getName() + ", moving to next file");
+                logger.info("Tracker getNextRange is null for file: " + file.getName() + ", moving to next file");
                 gotoNextFile(e, project);
             }
         }
@@ -91,7 +93,7 @@ public class PrevDiffLocation {
         LocalChangeList defaultChangeList = changeListManager.getDefaultChangeList();
         List<Change> changes = new ArrayList<>(defaultChangeList.getChanges());
         if (changes.isEmpty()) {
-            info("No changes, doing nothing");
+            logger.info("No changes, doing nothing");
             return;
         }
 
@@ -109,26 +111,26 @@ public class PrevDiffLocation {
         }
 
         VirtualFile nextFile = files.get(nextFileIdx);
-        info("Next file is: " + nextFile.getName());
+        logger.info("Next file is: " + nextFile.getName());
         Editor editor = getEditor(project, nextFile);
         LineStatusTracker<?> tracker =
                 LineStatusTrackerManager.getInstance(project).getLineStatusTracker(editor.getDocument());
 
         if (null == tracker) { // It's a totally new file (no proper tracker)
-            info("Tracker is null for nextfile: " + nextFile.getName());
+            logger.info("Tracker is null for nextfile: " + nextFile.getName());
             int line = editor.getCaretModel().getLogicalPosition().line;
-            info("Moving to line: " + line + " for nextfile: " + nextFile.getName());
+            logger.info("Moving to line: " + line + " for nextfile: " + nextFile.getName());
             FileEditorManager fem = FileEditorManager.getInstance(project);
             OpenFileDescriptor descriptor = new OpenFileDescriptor(project, nextFile, line, 1);
             fem.openTextEditor(descriptor, true);
             return;
         }
         if (!tracker.isValid()) {
-            info("Tracker is invalid for nextfile");
+            logger.info("Tracker is invalid for nextfile");
             return;
         }
         if (!tracker.isAvailableAt(editor)) {
-            info("Tracker is not available for nextfile");
+            logger.info("Tracker is not available for nextfile");
             return;
         }
 
@@ -140,12 +142,12 @@ public class PrevDiffLocation {
             if (-1 == column) {
                 column = 0;
             }
-            info("Moving to line for nextfile: " + visualLine + " and column: " + column);
+            logger.info("Moving to line for nextfile: " + visualLine + " and column: " + column);
             OpenFileDescriptor descriptor = new OpenFileDescriptor(project, nextFile, visualLine, column);
             fem.openTextEditor(descriptor, true);
             return;
         } else {
-            info("Range next2 is null, doing nothing");
+            logger.info("Range next2 is null, doing nothing");
             return;
         }
     }

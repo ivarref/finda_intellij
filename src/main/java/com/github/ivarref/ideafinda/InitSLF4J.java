@@ -12,11 +12,11 @@ public class InitSLF4J {
 
     private static void init() {
         if (!initialized) {
-            final String fileName = System.getProperty("user.home") + "/.pluggy_logback.xml";
+            final String extractedLogConfig = System.getProperty("user.home") + "/.pluggy_logback.xml";
             final String outputLogFileName = System.getProperty("user.home") + "/.simple.log";
             try (InputStream is = InitSLF4J.class.getResourceAsStream("/pluggy_logback.xml");
                  BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-                 FileWriter fw = new FileWriter(fileName, StandardCharsets.UTF_8, false);
+                 FileWriter fw = new FileWriter(extractedLogConfig, StandardCharsets.UTF_8, false);
                  PrintWriter pw = new PrintWriter(fw)) {
                 while (true) {
                     String line = reader.readLine();
@@ -33,12 +33,12 @@ public class InitSLF4J {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+            System.setProperty("logback.configurationFile", extractedLogConfig);
             initialized = true;
         }
     }
 
     public static synchronized Logger getLogger(Class<?> clazz) {
-        System.setProperty("logback.configurationFile", "/Users/ire/.finda/integrations/finda_intellij/src/resources/pluggy_logback.xml");
         init();
         return LoggerFactory.getLogger(clazz);
     }
