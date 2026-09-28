@@ -51,11 +51,13 @@
         <action
                 class="com.github.ivarref.ideafinda.NextChangeAction"
                 id="com.github.ivarref.ideafinda.NextChangeAction"
+                text="Go to next change (with wrap around)"
                 description="Go to next change">
         </action>
         <action
                 class="com.github.ivarref.ideafinda.PrevChangeAction"
                 id="com.github.ivarref.ideafinda.PrevChangeAction"
+                text="Go to previous change (with wrap around)"
                 description="Go to previous change">
         </action>
 
