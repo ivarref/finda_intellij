@@ -62,10 +62,15 @@
         </action>
 
         <action
-                class="com.github.ivarref.ideafinda.SplitAndMove"
-                id="com.github.ivarref.ideafinda.SplitAndMoveAction"
-                text="Split and move tab (max two splits)"
-                description="Split and move tab (max two splits)">
+                class="com.github.ivarref.ideafinda.MoveToNextTabGroup"
+                id="com.github.ivarref.ideafinda.MoveToNextTabGroup"
+                text="Move to next tab group, creating group if needed (max two splits)">
+        </action>
+
+        <action
+                class="com.github.ivarref.ideafinda.CopyToNextTabGroup"
+                id="com.github.ivarref.ideafinda.CopyToNextTabGroup"
+                text="Copy to next tab group, creating group if needed (max two splits)">
         </action>
 
         <action id="com.github.ivarref.ideafinda.NextWhateverAction"
