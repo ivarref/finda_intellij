@@ -18,6 +18,10 @@ public class MoveToNextTabGroup extends AnAction {
         int splitCount = fem.getWindowSplitCount();
         logger.info("Splitcount is: {}", splitCount);
         if (splitCount == 1) {
+            if (fem.getOpenFiles().length == 1) {
+                logger.info("Single open file, doing nothing");
+                return;
+            }
             // Create a new split group and move tab
             logger.info("Executing MoveTabRight");
             Utils.executeActionId("MoveTabRight", event);
