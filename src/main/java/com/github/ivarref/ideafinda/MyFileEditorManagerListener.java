@@ -32,6 +32,9 @@ public class MyFileEditorManagerListener implements FileEditorManagerListener {
 
     @Override
     public final void fileOpened(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
+        if (true) {
+            return;
+        }
         info("***************************************************");
         String basePath = source.getProject().getBasePath();
         String enc = URLEncoder.encode(basePath, StandardCharsets.UTF_8);

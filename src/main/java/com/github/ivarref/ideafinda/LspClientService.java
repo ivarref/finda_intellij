@@ -27,12 +27,18 @@ import org.jetbrains.annotations.Nullable;
 import java.io.*;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
+import static com.github.ivarref.ideafinda.SimpleLog.*;
 
 @Service(Service.Level.PROJECT)
 public final class LspClientService implements Disposable {
@@ -85,7 +91,7 @@ public final class LspClientService implements Disposable {
         if (basePath == null)
             throw new IllegalStateException("Project has no base path");
 
-        SimpleLog.log("Starting command '" + command + "' in base path '" + basePath + "'");
+        log("Starting command '" + command + "' in base path '" + basePath + "'");
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(new File(basePath));
@@ -97,10 +103,10 @@ public final class LspClientService implements Disposable {
                 while (true) {
                     String line = err.readLine();
                     if (line == null) {
-                        SimpleLog.log("EOF reached for process");
+                        log("EOF reached for process");
                         break;
                     } else {
-                        SimpleLog.log("lsp: " + line);
+                        log("lsp: " + line);
                     }
                 }
             } catch (IOException ignored) {
@@ -129,14 +135,14 @@ public final class LspClientService implements Disposable {
         caps.setTextDocument(tdCaps);
         initParams.setCapabilities(caps);
 
-        SimpleLog.log("Begin initialize ...");
+        log("Begin initialize ...");
         srv.initialize(initParams).get(60, TimeUnit.SECONDS);
-        SimpleLog.log("Begin initialize ... OK!");
+        log("Begin initialize ... OK!");
         srv.initialized(new InitializedParams());
 
         this.process = proc;
         this.server = srv;
-        SimpleLog.log("server started!");
+        log("server started!");
     }
 
     @Override
@@ -158,23 +164,23 @@ public final class LspClientService implements Disposable {
         if (proc != null) proc.destroyForcibly();
     }
 
-    public static @Nullable String detectCommand(@NotNull VirtualFile file) {
+    public @Nullable String detectCommand(@NotNull VirtualFile file) {
         String ext = file.getExtension();
-        SimpleLog.log("extension is: '" + ext + "'");
+        log("extension is: '" + ext + "'");
         if (ext == null) return null;
         return switch (ext.toLowerCase()) {
             case "clj", "cljs", "cljc", "edn" -> {
                 String s = findInPath("clojure-lsp");
                 if (s == null) {
-                    SimpleLog.log("clojure-lsp not found!");
+                    log("clojure-lsp not found!");
                 } else {
-                    SimpleLog.log("clojure-lsp located at: '" + s + "'");
+                    log("clojure-lsp located at: '" + s + "'");
                 }
                 String ss = findInPath("clojure");
                 if (ss == null) {
-                    SimpleLog.log("Command 'clojure' not found!");
+                    log("Command 'clojure' not found!");
                 } else {
-                    SimpleLog.log("Command 'clojure' located at: '" + ss + "'");
+                    log("Command 'clojure' located at: '" + ss + "'");
                 }
                 yield s;
             }
@@ -182,7 +188,86 @@ public final class LspClientService implements Disposable {
         };
     }
 
-    private static @Nullable String findInPath(String binary) {
+    private static @Nullable String findMisePath() {
+        try {
+            Process p = new ProcessBuilder("which", "mise").start();
+            String result = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            String result2 = p.waitFor() == 0 && !result.isEmpty() ? result : null;
+            if (result2 == null) {
+                log("'which mise' returned nothing");
+            } else {
+                log("Mise located at '" + result2 + "'");
+                return result2;
+            }
+        } catch (Exception e) {
+            return null;
+        }
+        String userHome = System.getProperty("user.home");
+        log("userHome is: '" + userHome + "'");
+        String misePath = userHome + "/.local/bin/mise";
+        if (new File(misePath).exists()) {
+            log("Checking '" + misePath + "' ... Found!");
+            return misePath;
+        } else {
+            log("Checking '" + misePath + "' ... Not found!");
+            return null;
+        }
+    }
+
+    private @Nullable String findInPath(String binary) {
+        String misePath = findMisePath();
+        String projectDir = System.getenv("PROJECT_DIR");
+        log("project_dir is: " + projectDir);
+
+        Path miseScriptFile = null;
+        try {
+            Set<PosixFilePermission> fp =
+                    PosixFilePermissions.fromString("rwxrwxrwx");
+
+            miseScriptFile = Files.createTempFile("mise_script", ".sh",
+                    PosixFilePermissions.asFileAttribute(fp));
+            String tmpFile = project.getBasePath() + "/.misetmp.sh";
+
+            try (BufferedWriter bf = new BufferedWriter(new FileWriter(tmpFile))) {
+                bf.write("#!/usr/bin/env bash");
+                bf.write("\n");
+                bf.write("pwd\n");
+                bf.write("echo \"wtf\"\n");
+                bf.write("eval \"$(mise activate --no-hook-env)\"\n");
+                bf.write("mise hook-env\n");
+                bf.write("echo \"wtf2\"\n");
+                bf.write("eval \"$(mise activate bash)\"");
+                bf.write("\n");
+                bf.write("which \"clojure-lsp\"");
+                bf.write("\n");
+                bf.write("echo \"$PATH\"");
+                bf.write("\n");
+                bf.write("echo \"janei\"");
+                bf.write("\n");
+            }
+            Process p2 = new ProcessBuilder("chmod", "+x", tmpFile).start();
+            String result2 = new String(p2.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            int exitCode2 = p2.waitFor();
+
+            Process p = new ProcessBuilder(misePath, "run",
+                    "--quiet", "--cd", project.getBasePath(), "./.misetmp.sh").start();
+            String result = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            int exitCode = p.waitFor();
+            log("mise script exited with code '" + exitCode + "'");
+            log("mise script stdout: '" + result + "'");
+        } catch (Exception e) {
+            log("Exception while invoking mise: " + e.getMessage());
+            return null;
+        } finally {
+            if (miseScriptFile != null) {
+                try {
+                    miseScriptFile.toFile().delete();
+                } catch (Exception e) {
+                    log("Delete temp file failed");
+                }
+            }
+        }
+
         try {
             Process p = new ProcessBuilder("which", binary).start();
             String result = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
@@ -229,7 +314,7 @@ public final class LspClientService implements Disposable {
 
     private static @NotNull String languageId(@NotNull VirtualFile file) {
         String ext = file.getExtension();
-        SimpleLog.log("Ext is: " + ext);
+        log("Ext is: " + ext);
         if (ext == null) return "text";
         return switch (ext.toLowerCase()) {
             case "clj", "cljc" -> "clojure";
@@ -249,18 +334,18 @@ public final class LspClientService implements Disposable {
 
         @Override
         public void showMessage(MessageParams messageParams) {
-            SimpleLog.log("showMessage: " + messageParams);
+            log("showMessage: " + messageParams);
         }
 
         @Override
         public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams requestParams) {
-            SimpleLog.log("showMessageRequest");
+            log("showMessageRequest");
             return CompletableFuture.completedFuture(null);
         }
 
         @Override
         public void logMessage(MessageParams message) {
-            SimpleLog.log("logMessage: " + message);
+            log("logMessage: " + message);
         }
     }
 }
