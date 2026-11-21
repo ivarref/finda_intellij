@@ -48,3 +48,6 @@ lib/
 ideaopen.log
 *.log
 .idea/
+
+.vibe/
+
