@@ -83,6 +83,22 @@
                 description="Previous whatever action">
 <!--            <keyboard-shortcut keymap="$default" first-keystroke="meta P"/>-->
         </action>
+
+        <action id="com.github.ivarref.ideafinda.FocusFormToggleAction"
+                class="com.github.ivarref.ideafinda.FocusFormToggleAction"
+                text="Focus Form: Toggle"
+                description="Show only the top-level form at the caret, hiding everything above and below">
+        </action>
+        <action id="com.github.ivarref.ideafinda.FocusNextFormAction"
+                class="com.github.ivarref.ideafinda.FocusNextFormAction"
+                text="Focus Form: Next"
+                description="Move to the next top-level form">
+        </action>
+        <action id="com.github.ivarref.ideafinda.FocusPrevFormAction"
+                class="com.github.ivarref.ideafinda.FocusPrevFormAction"
+                text="Focus Form: Previous"
+                description="Move to the previous top-level form">
+        </action>
 <!--        <action id="com.github.ivarref.ideafinda.WindowChooseAction"-->
 <!--                class="com.github.ivarref.ideafinda.WindowChooseAction" text="Choose Window Action">-->
 <!--            <keyboard-shortcut keymap="$default" first-keystroke="COMMA" second-keystroke="W"/>-->
