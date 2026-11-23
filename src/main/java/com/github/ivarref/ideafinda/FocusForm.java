@@ -47,15 +47,15 @@ public final class FocusForm implements Disposable {
         return editor.getUserData(KEY) != null;
     }
 
-    public static void setActive(@NotNull Project project, @NotNull Editor editor, boolean active) {
+    public static void deactivate(@NotNull Editor editor) {
         FocusForm current = editor.getUserData(KEY);
-        if (!active) {
-            if (current != null) {
-                Disposer.dispose(current);
-            }
-            return;
-        }
         if (current != null) {
+            Disposer.dispose(current);
+        }
+    }
+
+    public static void activate(@NotNull Project project, @NotNull Editor editor) {
+        if (isActive(editor)) {
             return;
         }
         FocusForm focus = new FocusForm(project, editor);
@@ -94,6 +94,34 @@ public final class FocusForm implements Disposable {
         if (!isActive(editor)) {
             editor.getScrollingModel().scrollToCaret(ScrollType.MAKE_VISIBLE);
         }
+    }
+
+    /**
+     * Moves the caret to the first non-blank character of the first/last visible line,
+     * like Vim's gg/G. Without focus, that is the start/end of the document.
+     */
+    public static void moveToBoundary(@NotNull Editor editor, boolean end) {
+        Document doc = editor.getDocument();
+        FocusForm focus = editor.getUserData(KEY);
+        int start = 0;
+        int stop = doc.getTextLength();
+        if (focus != null) {
+            if (focus.before != null && focus.before.isValid()) {
+                start = focus.before.getEndOffset();
+            }
+            if (focus.after != null && focus.after.isValid()) {
+                stop = focus.after.getStartOffset();
+            }
+        }
+        int line = doc.getLineNumber(end ? stop : start);
+        int offset = doc.getLineStartOffset(line);
+        int lineEnd = doc.getLineEndOffset(line);
+        CharSequence text = doc.getImmutableCharSequence();
+        while (offset < lineEnd && Character.isWhitespace(text.charAt(offset))) {
+            offset++;
+        }
+        editor.getCaretModel().moveToOffset(offset);
+        editor.getScrollingModel().scrollToCaret(ScrollType.MAKE_VISIBLE);
     }
 
     private void scheduleRefresh() {

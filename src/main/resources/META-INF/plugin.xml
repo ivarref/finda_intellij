@@ -87,7 +87,7 @@
         <action id="com.github.ivarref.ideafinda.FocusFormToggleAction"
                 class="com.github.ivarref.ideafinda.FocusFormToggleAction"
                 text="Focus Form: Toggle"
-                description="Show only the top-level form at the caret, hiding everything above and below">
+                description="In all editors, show only the top-level form at the caret, hiding everything above and below">
         </action>
         <action id="com.github.ivarref.ideafinda.FocusNextFormAction"
                 class="com.github.ivarref.ideafinda.FocusNextFormAction"
@@ -98,6 +98,16 @@
                 class="com.github.ivarref.ideafinda.FocusPrevFormAction"
                 text="Focus Form: Previous"
                 description="Move to the previous top-level form">
+        </action>
+        <action id="com.github.ivarref.ideafinda.FocusFormStartAction"
+                class="com.github.ivarref.ideafinda.FocusFormStartAction"
+                text="Focus Form: Go to Start"
+                description="Go to the first line of the focused form (or the document when not focused)">
+        </action>
+        <action id="com.github.ivarref.ideafinda.FocusFormEndAction"
+                class="com.github.ivarref.ideafinda.FocusFormEndAction"
+                text="Focus Form: Go to End"
+                description="Go to the last line of the focused form (or the document when not focused)">
         </action>
 <!--        <action id="com.github.ivarref.ideafinda.WindowChooseAction"-->
 <!--                class="com.github.ivarref.ideafinda.WindowChooseAction" text="Choose Window Action">-->
